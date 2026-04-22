@@ -12,26 +12,25 @@ const (
 	HeaderContentTypeName = "Content-Type"
 )
 
-func (nm *NetworkManagerImpl) FetchAccessJWToken(clientId string, clientSecret string,
+func (nm *NetworkManagerImpl) FetchAccessJWToken(basicAuthorizationToken string,
 	timeout time.Duration) (json.RawMessage, error) {
 
 	url := nm.UrlProvider.MakeAccessTokenUrl()
-	data := nm.formFetchAccessTokenData(clientId, clientSecret)
+	data := nm.formFetchAccessTokenData()
 	request := Request{
-		Method:      HttpPost,
-		Url:         url,
-		ContentType: FormContentType,
-		Data:        data,
-		Timeout:     timeout,
+		Method:        HttpPost,
+		Url:           url,
+		ContentType:   FormContentType,
+		Authorization: basicAuthorizationToken,
+		Data:          data,
+		Timeout:       timeout,
 	}
 	response, err := nm.makeCall(&request, NetworkCallAttemptsNumberUncritical, -1)
 	return response.Body, err
 }
 
-func (nm *NetworkManagerImpl) formFetchAccessTokenData(clientId string, clientSecret string) string {
+func (nm *NetworkManagerImpl) formFetchAccessTokenData() string {
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPGrantType, "client_credentials")
-	qb.Append(utils.QPClientId, clientId)
-	qb.Append(utils.QPClientSecret, clientSecret)
 	return qb.String()
 }

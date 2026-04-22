@@ -1,6 +1,20 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## 3.19.0 - 2026-04-22
+### Features
+* Added support for variation simulation when feature flags are **inactive (OFF state)** across the following methods:
+    - [`GetVariation`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getvariation)
+    - [`GetVariations`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getvariations)
+    - [`IsFeatureActive`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#isfeatureactive--isfeatureactivewithtracking)
+    - This support is also extended to the following **deprecated methods**:
+        - [`GetActiveFeatureListForVisitor`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getactivefeaturelistforvisitor)
+        - [`GetActiveFeatures`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getactivefeatures)
+        - [`GetFeatureVariationKey`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getfeaturevariationkey)
+        - [`GetFeatureVariable`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getfeaturevariable)
+* Improved the performance of the [`getDataFile()`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getdatafile) instance that is refreshed whenever the SDK configuration is updated.
+* The [`getFeatureList`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getfeaturelist) method has been deprecated in favor of `getDataFile()`.
+
 ## 3.18.0 - 2026-02-13
 ### Features
 * Updated the allowed range for the [`TrackingInterval`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#additional-configuration). The new range is from **`1000` ms** (default) to **`5000` ms**, allowing a reduction in the number of tracking requests.

@@ -67,7 +67,7 @@ func (tb *TrackingBuilder) Build() {
 	}
 	tb.visitorCodes.Range(func(visitorCode string) bool {
 		if tb.totalSize <= tb.requestSizeLimit {
-			visitor := tb.visitorManager.GetVisitor(visitorCode)
+			visitor := tb.visitorManager.PeekVisitor(visitorCode)
 			isConsentGiven := tb.isConsentGiven(visitor)
 			data := tb.collectTrackingData(visitorCode, visitor, isConsentGiven)
 			if len(data) > 0 {

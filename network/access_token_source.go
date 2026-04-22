@@ -1,6 +1,7 @@
 package network
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"time"
 
@@ -8,8 +9,9 @@ import (
 )
 
 const (
-	TokenExpirationGap   = 60   // in seconds
-	TokenObsolescenceGap = 1800 // in seconds
+	TokenExpirationGap       = 60   // in seconds
+	TokenObsolescenceGap     = 1800 // in seconds
+	BasicAuthorizationPrefix = "Basic "
 )
 
 type AccessTokenSource interface {
@@ -18,11 +20,26 @@ type AccessTokenSource interface {
 }
 
 type AccessTokenSourceImpl struct {
-	clientId       string
-	clientSecret   string
-	networkManager NetworkManager
-	cachedToken    *expiringToken // pointer for thread-safe
-	fetching       bool
+	clientId                string
+	clientSecret            string
+	networkManager          NetworkManager
+	cachedToken             *expiringToken // pointer for thread-safe
+	fetching                bool
+	basicAuthorizationToken string
+}
+
+func NewAccessTokenSource(clientId string, clientSecret string, networkManager NetworkManager) *AccessTokenSourceImpl {
+	return &AccessTokenSourceImpl{
+		networkManager:          networkManager,
+		clientId:                clientId,
+		clientSecret:            clientSecret,
+		basicAuthorizationToken: constructBasicToken(clientId, clientSecret),
+	}
+}
+
+func constructBasicToken(clientId string, clientSecret string) string {
+	basicTokenContent := clientId + ":" + clientSecret
+	return BasicAuthorizationPrefix + base64.StdEncoding.EncodeToString([]byte(basicTokenContent))
 }
 
 func (ats *AccessTokenSourceImpl) GetToken(timeout time.Duration) string {
@@ -56,7 +73,7 @@ func (ats *AccessTokenSourceImpl) fetchToken(timeout time.Duration) string {
 	logging.Debug("CALL: AccessTokenSourceImpl.fetchToken(timeout: %s)", timeout)
 	ats.fetching = true
 	defer func() { ats.fetching = false }()
-	jsonResponse, err := ats.networkManager.FetchAccessJWToken(ats.clientId, ats.clientSecret, timeout)
+	jsonResponse, err := ats.networkManager.FetchAccessJWToken(ats.basicAuthorizationToken, timeout)
 	var token string
 	if err != nil {
 		logging.Error("Failed to read access JWT: %s", err)

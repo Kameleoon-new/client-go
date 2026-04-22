@@ -21,7 +21,6 @@ import (
 	"github.com/Kameleoon/client-go/v3/targeting"
 	"github.com/Kameleoon/client-go/v3/types"
 	"github.com/Kameleoon/client-go/v3/utils"
-	"github.com/segmentio/encoding/json"
 	"github.com/valyala/fasthttp"
 )
 
@@ -291,6 +290,8 @@ type KameleoonClient interface {
 	OnUpdateConfiguration(handler func())
 
 	// GetFeatureList returns a list of all feature flag keys
+	//
+	// Deprecated: Please use `GetDataFile()` instead
 	GetFeatureList() []string
 
 	// GetActiveFeatureListForVisitor returns a list of active feature flag keys for a visitor
@@ -912,7 +913,7 @@ func (c *kameleoonClient) GetFeatureVariable(
 			if !exist {
 				err = errs.NewFeatureVariableNotFound(featureKey, variationKey, variableKey)
 			} else {
-				variableValue = parseFeatureVariable(variable)
+				variableValue = variable.GetVariableValue()
 			}
 		}
 	}
@@ -1069,9 +1070,6 @@ func (c *kameleoonClient) GetVariations(
 	}
 	variations = make(map[string]types.Variation)
 	for _, ff := range c.dataManager.DataFile().GetOrderedFeatureFlags() {
-		if !ff.GetEnvironmentEnabled() {
-			continue
-		}
 		var variationKey string
 		var evalExp *evaluatedExperiment
 		variationKey, evalExp, err = c.getVariationInfo(visitorCode, ff, p.track)
@@ -1132,6 +1130,13 @@ func (c *kameleoonClient) evaluate(
 	if visitor != nil {
 		forcedVariation = visitor.GetForcedFeatureVariation(featureFlag.GetFeatureKey())
 	}
+
+	if forcedVariation == nil || !forcedVariation.Simulated() {
+		if err = c.dataManager.DataFile().EnsureEnvironmentEnabled(featureFlag); err != nil {
+			return
+		}
+	}
+
 	if forcedVariation != nil {
 		evalExp = newEvaluatedExperimentFromForcedVariation(forcedVariation)
 	} else {
@@ -1229,34 +1234,13 @@ func createExternalVariation(
 			internalVariation, evalExp, variation,
 		)
 	}()
-	variables := make(map[string]types.Variable)
-	if internalVariation != nil {
-		for _, internalVariable := range internalVariation.Variables {
-			variables[internalVariable.Key] = types.Variable{
-				Key:   internalVariable.Key,
-				Type:  internalVariable.Type,
-				Value: parseFeatureVariable(&internalVariable),
-			}
-		}
-	}
-	var variationKey, variationName string
-	if internalVariation != nil {
-		variationKey = internalVariation.Key
-		variationName = internalVariation.Name
-	}
 	var variationId *int
 	var experimentId *int
 	if evalExp != nil {
 		variationId = utils.Reref(evalExp.varByExp.VariationID)
 		experimentId = utils.Reref(&evalExp.experiment.ExperimentId)
 	}
-	variation = types.Variation{
-		Key:          variationKey,
-		Name:         variationName,
-		VariationID:  variationId,
-		ExperimentID: experimentId,
-		Variables:    variables,
-	}
+	variation = (types.Variation{}).BuildFromInternal(internalVariation, variationId, experimentId)
 	return
 }
 
@@ -1269,13 +1253,16 @@ func (c *kameleoonClient) GetFeatureVariationVariables(
 	var mapVariableValues map[string]interface{}
 	featureFlag, err := c.dataManager.DataFile().GetFeatureFlag(featureKey)
 	if err == nil {
+		if err = c.dataManager.DataFile().EnsureEnvironmentEnabled(featureFlag); err != nil {
+			return nil, err
+		}
 		variation, exist := featureFlag.GetVariationByKey(variationKey)
 		if !exist {
 			err = errs.NewFeatureVariationNotFound(featureKey, variationKey)
 		} else {
 			mapVariableValues = make(map[string]interface{})
 			for _, variable := range variation.Variables {
-				mapVariableValues[variable.Key] = parseFeatureVariable(&variable)
+				mapVariableValues[variable.Key] = variable.GetVariableValue()
 			}
 		}
 	}
@@ -1283,21 +1270,6 @@ func (c *kameleoonClient) GetFeatureVariationVariables(
 		"RETURN: kameleoonClient.GetFeatureVariationVariables(featureKey: %s, variationKey: %s) -> "+
 			"(variables: %s, error: %s)", featureKey, variationKey, mapVariableValues, err)
 	return mapVariableValues, err
-}
-
-func parseFeatureVariable(variable *types.Variable) interface{} {
-	var value interface{}
-	switch variable.Type {
-	case "JSON":
-		if valueString, ok := variable.Value.(string); ok {
-			if err := json.Unmarshal([]byte(valueString), &value); err != nil {
-				value = nil
-			}
-		}
-	default:
-		value = variable.Value
-	}
-	return value
 }
 
 func (c *kameleoonClient) GetRemoteData(key string, timeout ...time.Duration) ([]byte, error) {
@@ -1397,6 +1369,7 @@ func (c *kameleoonClient) getValidSavedVariation(visitorCode string, experiment 
 }
 //*/
 
+// Deprecated: Please use `GetDataFile()` instead.
 func (c *kameleoonClient) GetFeatureList() []string {
 	logging.Info("CALL: kameleoonClient.GetFeatureList()")
 	featureFlags := c.dataManager.DataFile().GetFeatureFlags()
@@ -1422,9 +1395,6 @@ func (c *kameleoonClient) GetActiveFeatureListForVisitor(visitorCode string) (ar
 		featureFlags := c.dataManager.DataFile().GetOrderedFeatureFlags()
 		arrayIds = make([]string, 0, len(featureFlags))
 		for _, ff := range featureFlags {
-			if !ff.GetEnvironmentEnabled() {
-				continue
-			}
 			var evalExp *evaluatedExperiment
 			evalExp, err = c.evaluate(visitor, visitorCode, ff, false, false)
 			if err == nil {
@@ -1460,9 +1430,6 @@ func (c *kameleoonClient) GetActiveFeatures(visitorCode string) (activeFeatures 
 	visitor := c.visitorManager.GetVisitor(visitorCode)
 	activeFeatures = make(map[string]types.Variation)
 	for _, ff := range c.dataManager.DataFile().GetOrderedFeatureFlags() {
-		if !ff.GetEnvironmentEnabled() {
-			continue
-		}
 		var evalExp *evaluatedExperiment
 		evalExp, err = c.evaluate(visitor, visitorCode, ff, false, false)
 		if err == nil {
@@ -1599,44 +1566,9 @@ func (c *kameleoonClient) EvaluateAudiences(visitorCode string) (err error) {
 
 func (c *kameleoonClient) GetDataFile() types.DataFile {
 	logging.Info("CALL: kameleoonClient.GetDataFile()")
-	internalFeatureFlags := c.dataManager.DataFile().GetFeatureFlags()
-	featureFlags := make(map[string]types.FeatureFlag, len(internalFeatureFlags))
-	for featureKey, internalFeatureFlag := range internalFeatureFlags {
-		// Collect variations
-		internalVariations := internalFeatureFlag.GetVariations()
-		variations := make(map[string]types.Variation, len(internalVariations))
-		for _, internalVariation := range internalVariations {
-			variations[internalVariation.Key] = createExternalVariation(&internalVariation, nil)
-		}
-		// Collect rules
-		internalRules := internalFeatureFlag.GetRules()
-		rules := make([]types.Rule, len(internalRules))
-		for ruleIndex, internalRule := range internalRules {
-			varsByExp := internalRule.GetRuleBase().Experiment.VariationsByExposition
-			ruleVars := make(map[string]types.Variation, len(varsByExp))
-			for _, varByExp := range varsByExp {
-				if variation, exists := variations[varByExp.VariationKey]; exists {
-					ruleVars[variation.Key] = types.Variation{
-						Key:          variation.Key,
-						Name:         variation.Name,
-						VariationID:  utils.Reref(varByExp.VariationID),
-						ExperimentID: utils.Reref(&internalRule.GetRuleBase().Experiment.ExperimentId),
-						Variables:    variation.Variables,
-					}
-				}
-			}
-			rules[ruleIndex] = types.Rule{Variations: ruleVars}
-		}
-		featureFlags[featureKey] = types.FeatureFlag{
-			Variations:           variations,
-			IsEnvironmentEnabled: internalFeatureFlag.GetEnvironmentEnabled(),
-			Rules:                rules,
-			DefaultVariationKey:  internalFeatureFlag.GetDefaultVariationKey(),
-		}
-	}
-	dataFile := types.DataFile{FeatureFlags: featureFlags}
+	dataFile := c.dataManager.ExternalDataFile()
 	logging.Info("RETURN: kameleoonClient.GetDataFile() -> (dataFile: %v)", dataFile)
-	return dataFile
+	return *dataFile
 }
 
 type evaluatedExperiment struct {

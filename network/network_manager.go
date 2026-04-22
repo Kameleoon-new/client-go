@@ -27,7 +27,7 @@ type NetworkManager interface {
 	GetAccessTokenSource() AccessTokenSource
 
 	// Automation API
-	FetchAccessJWToken(clientId string, clientSecret string, timeout time.Duration) (json.RawMessage, error)
+	FetchAccessJWToken(basicAuthorizationToken string, timeout time.Duration) (json.RawMessage, error)
 
 	// SDK config API
 	FetchConfiguration(ts int64, ifModifiedSince string) (FetchedConfiguration, error)
@@ -124,7 +124,7 @@ func (nm *NetworkManagerImpl) makeCall(
 	}
 	if isTokenRejected {
 		logging.Error("Wrong Kameleoon API access token slows down the SDK's requests")
-		request.AccessToken = ""
+		request.Authorization = ""
 		response = nm.NetProvider.Call(request, headersToRead)
 		if _, err = nm.processErrors(request, &response, logging.ERROR); err == nil {
 			logging.Debug("Fetched response %s for request %s", response, request)
@@ -143,7 +143,7 @@ func (nm *NetworkManagerImpl) getLogLevel(attempt int, attemptCount int) logging
 
 func (nm *NetworkManagerImpl) authorizeIfRequired(request *Request) {
 	if request.IsAuthRequired {
-		request.AccessToken = nm.accessTokenSource.GetToken(request.Timeout)
+		request.Authorization = nm.accessTokenSource.GetToken(request.Timeout)
 	}
 }
 
@@ -158,9 +158,9 @@ func (nm *NetworkManagerImpl) processErrors(request *Request, response *Response
 		err = errs.NewUnexpectedStatusCode(response.Code, response.Body)
 		logging.Log(logLevel, "%s call %s failed: Received unexpected status code: %s, body: %s",
 			request.Method, request.Url, response.Code, string(response.Body[:]))
-		if (response.Code == codeUnauthorized) && (request.AccessToken != "") {
-			logging.Log(logLevel, "Unexpected rejection of access token %s", request.AccessToken)
-			nm.accessTokenSource.DiscardToken(request.AccessToken)
+		if (response.Code == codeUnauthorized) && (request.Authorization != "") {
+			logging.Log(logLevel, "Unexpected rejection of access token %s", request.Authorization)
+			nm.accessTokenSource.DiscardToken(request.Authorization)
 			isTokenRejected = true
 		}
 	}

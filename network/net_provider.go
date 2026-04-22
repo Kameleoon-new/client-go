@@ -36,20 +36,33 @@ type Request struct {
 	Timeout        time.Duration     // mandatory
 	Data           string            // optional ("")
 	Headers        map[string]string // optional
-	AccessToken    string            // optional ("")
+	Authorization  string            // optional ("")
 	IsAuthRequired bool              // optional (false)
 }
 
 func (r Request) String() string {
 	body := "nil"
 	if r.Data != "" {
-		if strings.HasPrefix(r.Data, "client_id=") {
-			body = "****"
-		} else {
-			body = r.Data
-		}
+		body = r.Data
 	}
-	return fmt.Sprintf("HttpRequest{Method:'%s',Url:'%s',Headers:%v,Body:'%s'}", r.Method, r.Url, r.Headers, body)
+
+	var headersBuilder strings.Builder
+	first := true
+	for name, value := range r.Headers {
+		if name == "Authorization" {
+			value = "***"
+		}
+		if !first {
+			headersBuilder.WriteString(",")
+		}
+		first = false
+
+		headersBuilder.WriteString(name)
+		headersBuilder.WriteString(":")
+		headersBuilder.WriteString(value)
+	}
+
+	return fmt.Sprintf("HttpRequest{Method:'%s',Url:'%s',Headers:%v,Body:'%s'}", r.Method, r.Url, headersBuilder.String(), body)
 }
 
 // response
@@ -134,8 +147,13 @@ func (*NetProviderImpl) setHeaders(req *fasthttp.Request, request *Request) {
 			req.Header.Set(key, value)
 		}
 	}
-	if len(request.AccessToken) > 0 {
-		req.Header.Set(AuthorizationHeader, "Bearer "+request.AccessToken)
+	if len(request.Authorization) > 0 {
+		switch {
+		case strings.HasPrefix(request.Authorization, "Basic "):
+			req.Header.Set(AuthorizationHeader, request.Authorization)
+		default:
+			req.Header.Set(AuthorizationHeader, "Bearer "+request.Authorization)
+		}
 	}
 	if len(request.ContentType) > 0 {
 		req.Header.SetContentType(string(request.ContentType))

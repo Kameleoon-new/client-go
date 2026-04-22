@@ -222,5 +222,5 @@ func getCondition(c types.TargetingCondition) types.Condition {
 		return conditions.NewKcsHeatRangeCondition(c)
 	}
 	logging.Info("Unexpected targeting condition type '%s'", c.GetType())
-	return nil
+	return conditions.NewUnknownCondition(c)
 }

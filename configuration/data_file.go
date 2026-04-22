@@ -11,6 +11,7 @@ import (
 
 type DataFile struct {
 	lastModified                     string
+	dateModified                     int64
 	customDataInfo                   *types.CustomDataInfo
 	holdout                          *types.Experiment
 	settings                         Settings
@@ -29,8 +30,8 @@ type DataFile struct {
 
 func (df DataFile) String() string {
 	return fmt.Sprintf(
-		"DataFile{environment:'%v',lastModified:'%v',featureFlags:%v,settings:%v}",
-		df.environment, df.lastModified, len(df.featureFlags), df.settings,
+		"DataFile{environment:'%v',lastModified:'%v',dateModified:%v,featureFlags:%v,settings:%v}",
+		df.environment, df.lastModified, df.dateModified, len(df.featureFlags), df.settings,
 	)
 }
 
@@ -48,6 +49,7 @@ func NewDataFile(configuration Configuration, lastModified string, environment s
 	featureFlagById, ruleInfoByExpId, variationById, experimentIdsWithJSOrCSSVariable := collectIndices(ffs)
 	dataFile := &DataFile{
 		lastModified:                     lastModified,
+		dateModified:                     configuration.DateModified,
 		customDataInfo:                   cdi,
 		holdout:                          configuration.Holdout,
 		settings:                         configuration.Settings,
@@ -103,6 +105,10 @@ func (df *DataFile) LastModified() string {
 	return df.lastModified
 }
 
+func (df *DataFile) DateModified() int64 {
+	return df.dateModified
+}
+
 func (df *DataFile) CustomDataInfo() *types.CustomDataInfo {
 	return df.customDataInfo
 }
@@ -133,12 +139,17 @@ func (df *DataFile) GetFeatureFlag(featureKey string) (types.IFeatureFlag, error
 	var err error
 	if !contains {
 		err = errs.NewFeatureNotFound(featureKey)
-	} else if !ff.EnvironmentEnabled {
-		err = errs.NewFeatureEnvironmentDisabled(featureKey, df.environment)
 	}
 	logging.Debug("RETURN: DataFile.GetFeatureFlag(featureKey: %s) -> (featureFlag: %s, error: %s)",
 		featureKey, ff, err)
 	return ff, err
+}
+
+func (df *DataFile) EnsureEnvironmentEnabled(featureFlag types.IFeatureFlag) error {
+	if !featureFlag.GetEnvironmentEnabled() {
+		return errs.NewFeatureEnvironmentDisabled(featureFlag.GetFeatureKey(), df.environment)
+	}
+	return nil
 }
 
 func (df *DataFile) GetFeatureFlags() map[string]types.IFeatureFlag {

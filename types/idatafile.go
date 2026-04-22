@@ -2,6 +2,7 @@ package types
 
 type IDataFile interface {
 	LastModified() string
+	DateModified() int64
 	CustomDataInfo() *CustomDataInfo
 	Holdout() *Experiment
 	Settings() Settings
@@ -10,6 +11,7 @@ type IDataFile interface {
 	GetFeatureFlags() map[string]IFeatureFlag
 	GetOrderedFeatureFlags() []IFeatureFlag
 	GetFeatureFlag(featureKey string) (IFeatureFlag, error)
+	EnsureEnvironmentEnabled(featureFlag IFeatureFlag) error
 	MEGroups() map[string]MEGroup
 
 	HasAnyTargetedDeliveryRule() bool

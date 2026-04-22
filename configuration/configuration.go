@@ -13,11 +13,13 @@ type Configuration struct {
 	Settings       Settings              `json:"configuration"`
 	FeatureFlags   []FeatureFlag         `json:"featureFlags"`
 	Segments       []types.SegmentBase   `json:"segments"`
+	DateModified   int64                 `json:"dateModified"`
 }
 
 func (c Configuration) String() string {
 	return fmt.Sprintf(
-		"Configuration{CustomDataInfo:%v,Settings:%v,FeatureFlags:%v,Segments:%v}",
+		"Configuration{CustomDataInfo:%v,Settings:%v,FeatureFlags:%v,Segments:%v,DateModified:%v}",
 		c.CustomDataInfo, c.Settings, logging.ObjectToString(c.FeatureFlags), logging.ObjectToString(c.Segments),
+		c.DateModified,
 	)
 }

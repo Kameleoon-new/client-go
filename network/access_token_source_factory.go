@@ -10,9 +10,5 @@ type AccessTokenSourceFactoryImpl struct {
 }
 
 func (f *AccessTokenSourceFactoryImpl) create(networkManager NetworkManager) AccessTokenSource {
-	return &AccessTokenSourceImpl{
-		clientId:       f.ClientId,
-		clientSecret:   f.ClientSecret,
-		networkManager: networkManager,
-	}
+	return NewAccessTokenSource(f.ClientId, f.ClientSecret, networkManager)
 }

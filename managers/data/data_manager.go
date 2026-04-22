@@ -6,6 +6,7 @@ import (
 
 type DataManager interface {
 	DataFile() types.IDataFile
+	ExternalDataFile() *types.DataFile
 	IsVisitorCodeManaged() bool
 
 	SetDataFile(dataFile types.IDataFile)
@@ -16,9 +17,13 @@ type DataManagerImpl struct {
 }
 
 func NewDataManagerImpl(dataFile types.IDataFile) *DataManagerImpl {
-	return &DataManagerImpl{
-		container: newDataContainer(dataFile),
-	}
+	dm := &DataManagerImpl{}
+	dm.SetDataFile(dataFile)
+	return dm
+}
+
+func (dm *DataManagerImpl) ExternalDataFile() *types.DataFile {
+	return dm.container.externalDataFile
 }
 
 func (dm *DataManagerImpl) DataFile() types.IDataFile {
@@ -35,12 +40,14 @@ func (dm *DataManagerImpl) SetDataFile(dataFile types.IDataFile) {
 
 type dataContainer struct {
 	dataFile             types.IDataFile
+	externalDataFile     *types.DataFile
 	isVisitorCodeManaged bool
 }
 
 func newDataContainer(dataFile types.IDataFile) *dataContainer {
 	return &dataContainer{
 		dataFile:             dataFile,
+		externalDataFile:     (types.DataFile{}).BuildFromInternal(dataFile),
 		isVisitorCodeManaged: dataFile.Settings().IsConsentRequired() && !dataFile.HasAnyTargetedDeliveryRule(),
 	}
 }

@@ -22,7 +22,7 @@ const (
 
 	configurationApiUrlFormat = "https://%s/v3/%s"
 	rtConfigurationUrlFormat  = "https://%s:8110/sse?%s"
-	accessTokenUrlFormat      = "https://%s/oauth/token"
+	accessTokenUrlFormat      = "https://%s/oauth/token?%s"
 	dataApiUrlFormat          = "https://%s%s?%s"
 )
 
@@ -46,28 +46,45 @@ type UrlProvider interface {
 }
 
 type UrlProviderImpl struct {
-	siteCode            string
-	dataApiDomain       string
-	eventsDomain        string
-	configurationDomain string
-	accessTokenDomain   string
-	sdkName             string
-	sdkVersion          string
-	isCustomDomain      bool
+	siteCode             string
+	dataApiDomain        string
+	eventsDomain         string
+	configurationDomain  string
+	accessTokenDomain    string
+	sdkName              string
+	sdkVersion           string
+	isCustomDomain       bool
+	accessTokenQueryBase string
+	trackingQueryBase    string
 }
 
 func NewUrlProviderImpl(siteCode string, networkDomain string, sdkName string, sdkVersion string) *UrlProviderImpl {
+	queryBuilder := makeSdkSiteCodeQueryBase(siteCode, sdkName, sdkVersion)
+	accessTokenQueryBase := queryBuilder.String()
+	queryBuilder.Append(utils.QPBodyUA, "true")
+	trackingQueryBase := queryBuilder.String()
+
 	up := &UrlProviderImpl{
-		siteCode:            siteCode,
-		sdkName:             sdkName,
-		sdkVersion:          sdkVersion,
-		dataApiDomain:       DefaultDataApiDomain,
-		eventsDomain:        DefaultEventsDomain,
-		configurationDomain: DefaultConfigurationDomain,
-		accessTokenDomain:   DefaultAccessTokenDomain,
+		siteCode:             siteCode,
+		sdkName:              sdkName,
+		sdkVersion:           sdkVersion,
+		dataApiDomain:        DefaultDataApiDomain,
+		eventsDomain:         DefaultEventsDomain,
+		configurationDomain:  DefaultConfigurationDomain,
+		accessTokenDomain:    DefaultAccessTokenDomain,
+		accessTokenQueryBase: accessTokenQueryBase,
+		trackingQueryBase:    trackingQueryBase,
 	}
 	up.updateDomains(networkDomain)
 	return up
+}
+
+func makeSdkSiteCodeQueryBase(siteCode string, sdkName string, sdkVersion string) *utils.QueryBuilder {
+	qb := utils.NewQueryBuilder()
+	qb.Append(utils.QPSdkName, sdkName)
+	qb.Append(utils.QPSdkVersion, sdkVersion)
+	qb.Append(utils.QPSiteCode, siteCode)
+	return qb
 }
 
 func (up *UrlProviderImpl) SiteCode() string {
@@ -130,12 +147,7 @@ func (up *UrlProviderImpl) ApplyDataApiDomain(dataApiDomain string) {
 }
 
 func (up *UrlProviderImpl) MakeTrackingUrl() string {
-	qb := utils.NewQueryBuilder()
-	qb.Append(utils.QPSdkName, up.sdkName)
-	qb.Append(utils.QPSdkVersion, up.sdkVersion)
-	qb.Append(utils.QPSiteCode, up.siteCode)
-	qb.Append(utils.QPBodyUA, "true")
-	return fmt.Sprintf(dataApiUrlFormat, up.dataApiDomain, trackingPath, qb.String())
+	return fmt.Sprintf(dataApiUrlFormat, up.dataApiDomain, trackingPath, up.trackingQueryBase)
 }
 
 func (up *UrlProviderImpl) MakeVisitorDataGetUrl(
@@ -207,5 +219,5 @@ func (up *UrlProviderImpl) MakeRealTimeUrl() string {
 }
 
 func (up *UrlProviderImpl) MakeAccessTokenUrl() string {
-	return fmt.Sprintf(accessTokenUrlFormat, up.accessTokenDomain)
+	return fmt.Sprintf(accessTokenUrlFormat, up.accessTokenDomain, up.accessTokenDomain)
 }

@@ -13,6 +13,8 @@ type VisitorManager interface {
 	GetVisitor(visitorCode string) Visitor
 	GetOrCreateVisitor(visitorCode string) Visitor
 
+	PeekVisitor(visitorCode string) Visitor
+
 	AddData(visitorCode string, data ...types.Data) Visitor
 	AddDataWithTrack(visitorCode string, track bool, data ...types.Data) Visitor
 
@@ -105,6 +107,20 @@ func (vm *VisitorManagerImpl) getOrCreateVisitor(visitorCode string) *VisitorImp
 		return NewVisitorImpl()
 	})
 	logging.Debug("RETURN: VisitorManagerImpl.getOrCreateVisitor(visitorCode: %s) -> (visitor)", visitorCode)
+	return visitor
+}
+
+func (vm *VisitorManagerImpl) PeekVisitor(visitorCode string) Visitor {
+	logging.Debug("CALL: VisitorManagerImpl.PeekVisitor(visitorCode: %s)", visitorCode)
+
+	var visitor Visitor
+	if v, ok := vm.visitors.Get(visitorCode); ok {
+		visitor = v
+	}
+
+	logging.Debug("RETURN: VisitorManagerImpl.PeekVisitor(visitorCode: %s) -> (visitor: %s)",
+		visitorCode, visitor)
+
 	return visitor
 }
 
