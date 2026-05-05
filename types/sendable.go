@@ -60,7 +60,7 @@ type duplicationSafeSendableBase struct {
 	sendableBase
 }
 
-func (sb *duplicationSafeSendableBase) initSendale() {
+func (sb *duplicationSafeSendableBase) initSendable() {
 	sb.nonce = utils.GetNonce()
 }
 
@@ -73,7 +73,7 @@ type duplicationUnsafeSendableBase struct {
 }
 
 func (sb *duplicationUnsafeSendableBase) Nonce() string {
-	if !sb.Sent() && (len(sb.nonce) == 0) {
+	if !sb.Sent() && len(sb.nonce) == 0 {
 		sb.nonce = utils.GetNonce()
 	}
 	return sb.nonce

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Kameleoon/client-go/v3/utils"
 )
@@ -12,10 +13,11 @@ const conversionEventType = "conversion"
 
 type Conversion struct {
 	duplicationSafeSendableBase
-	goalId   int
-	revenue  float64
-	negative bool
-	metadata []*CustomData
+	goalId         int
+	revenue        float64
+	negative       bool
+	metadata       []*CustomData
+	assignmentTime time.Time
 }
 
 type ConversionOptParams struct {
@@ -39,19 +41,35 @@ func NewConversionWithRevenue(goalId int, revenue float64, negative ...bool) *Co
 	return NewConversionWithOptParams(goalId, p)
 }
 func NewConversionWithOptParams(goalId int, params ConversionOptParams) *Conversion {
+	return newConversion(goalId, params, time.Now())
+}
+
+func newConversion(goalId int, params ConversionOptParams, assignmentTime time.Time) *Conversion {
 	c := &Conversion{
-		goalId:   goalId,
-		revenue:  params.Revenue,
-		negative: params.Negative,
-		metadata: params.Metadata,
+		goalId:         goalId,
+		revenue:        params.Revenue,
+		negative:       params.Negative,
+		metadata:       params.Metadata,
+		assignmentTime: assignmentTime,
 	}
-	c.initSendale()
+	c.initSendable()
 	return c
 }
 
+// Note: This is intended for internal use only and is not part of the stable API.
+func InternalNewConversion(goalId int, params ConversionOptParams, assignmentTime time.Time) *Conversion {
+	return newConversion(goalId, params, assignmentTime)
+}
+
 func (c Conversion) String() string {
-	return fmt.Sprintf("Conversion{goalId:%v,revenue:%v,negative:%v}",
-		c.goalId, c.revenue, c.negative)
+	return fmt.Sprintf(
+		"Conversion{goalId:%v,revenue:%v,negative:%v,metadata:%v,assignmentTime:%v}",
+		c.goalId,
+		c.revenue,
+		c.negative,
+		c.metadata,
+		c.assignmentTime,
+	)
 }
 
 func (c *Conversion) dataRestriction() {
@@ -74,17 +92,17 @@ func (c *Conversion) Metadata() []*CustomData {
 	return c.metadata
 }
 
+func (c *Conversion) AssignmentTime() time.Time {
+	return c.assignmentTime
+}
+
 func (c *Conversion) QueryEncode() string {
-	nonce := c.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, conversionEventType)
 	qb.Append(utils.QPGoalId, utils.WritePositiveInt(c.goalId))
 	qb.Append(utils.QPRevenue, strconv.FormatFloat(c.revenue, 'f', -1, 64))
 	qb.Append(utils.QPNegative, strconv.FormatBool(c.negative))
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, c.Nonce())
 	if len(c.metadata) > 0 {
 		qb.Append(utils.QPMetadata, c.encodeMetadata())
 	}

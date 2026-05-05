@@ -1,8 +1,9 @@
 package types
 
 import (
-	"github.com/Kameleoon/client-go/v3/utils"
 	"fmt"
+
+	"github.com/Kameleoon/client-go/v3/utils"
 )
 
 type DeviceType string
@@ -35,14 +36,10 @@ func (d *Device) Type() DeviceType {
 }
 
 func (d *Device) QueryEncode() string {
-	nonce := d.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, deviceEventType)
 	qb.Append(utils.QPDeviceType, string(d.deviceType))
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, d.Nonce())
 	return qb.String()
 }
 

@@ -55,7 +55,7 @@ func (vv *VisitorVisits) PrevVisits() []Visit {
 	if vv != nil {
 		return vv.prevVisits
 	}
-	return []Visit{}
+	return nil
 }
 
 func (vv *VisitorVisits) TimeStarted() int64 {
@@ -67,15 +67,11 @@ func (vv *VisitorVisits) TimeSincePreviousVisit() int64 {
 }
 
 func (vv *VisitorVisits) QueryEncode() string {
-	nonce := vv.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, visitorVisitsEventType)
 	qb.Append(utils.QPVisitNumber, strconv.Itoa(vv.visitNumber))
 	qb.Append(utils.QPTimeSincePreviousVisit, strconv.FormatInt(vv.timeSincePreviousVisit, 10))
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, vv.Nonce())
 	return qb.String()
 }
 

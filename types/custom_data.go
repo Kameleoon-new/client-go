@@ -104,16 +104,12 @@ func (cd *CustomData) Overwrite() bool {
 }
 
 func (cd *CustomData) QueryEncode() string {
-	nonce := cd.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, customDataEventType)
 	qb.Append(utils.QPIndex, strconv.Itoa(cd.index))
 	qb.Append(utils.QPValuesCountMap, cd.encodeValues())
 	qb.Append(utils.QPOverwrite, strconv.FormatBool(cd.overwrite))
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, cd.Nonce())
 	return qb.String()
 }
 

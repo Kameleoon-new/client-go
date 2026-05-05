@@ -1,6 +1,7 @@
 package targeting
 
 import (
+	"sync"
 	"time"
 
 	"github.com/Kameleoon/client-go/v3/logging"
@@ -9,6 +10,12 @@ import (
 	"github.com/Kameleoon/client-go/v3/targeting/conditions"
 	"github.com/Kameleoon/client-go/v3/types"
 	"github.com/Kameleoon/client-go/v3/utils"
+)
+
+var (
+	emptyVariations       = storage.NewDataMapStorageImpl[int, *types.AssignedVariation](new(sync.RWMutex), nil)
+	emptyPersonalizations = storage.NewDataMapStorageImpl[int, *types.Personalization](new(sync.RWMutex), nil)
+	emptyConversions      = storage.NewDataCollectionStorageImpl[*types.Conversion](new(sync.RWMutex), nil)
 )
 
 type TargetingManager interface {
@@ -85,39 +92,38 @@ func (tm *targetingManager) getConditionData(
 			conditionData = visitor.PageViewVisits()
 		}
 	case types.TargetingConversions:
-		if visitor != nil {
-			conditionData = visitor.Conversions()
+		conditionData = conditions.TargetingDataConversionCondition{
+			VisitorVisits: getVisitorVisits(visitor),
+			Conversions:   getConversions(visitor),
 		}
 	case types.TargetingVisitorCode:
 		conditionData = visitorCode
 	case types.TargetingSDKLanguage:
 		conditionData = &types.TargetedDataSdk{Language: utils.SdkName, Version: utils.SdkVersion}
 	case types.TargetingTargetFeatureFlag:
-		targetingDataTargetFeatureFlagCondition := conditions.TargetingDataTargetFeatureFlagCondition{
-			DataFile: tm.dataManager.DataFile(),
+		conditionData = conditions.TargetingDataTargetFeatureFlagCondition{
+			VisitorVisits:    getVisitorVisits(visitor),
+			DataFile:         tm.dataManager.DataFile(),
+			VariationStorage: getVariations(visitor),
 		}
-		if visitor != nil {
-			targetingDataTargetFeatureFlagCondition.VariationStorage = visitor.Variations()
-		}
-		conditionData = targetingDataTargetFeatureFlagCondition
 	case types.TargetingTargetExperiment:
-		if visitor != nil {
-			conditionData = visitor.Variations()
+		conditionData = conditions.TargetingDataTargetExperimentCondition{
+			VisitorVisits:    getVisitorVisits(visitor),
+			VariationStorage: getVariations(visitor),
 		}
 	case types.TargetingTargetPersonalization:
-		if visitor != nil {
-			conditionData = visitor.Personalizations()
+		conditionData = conditions.TargetingDataTargetPersonalizationCondition{
+			VisitorVisits:    getVisitorVisits(visitor),
+			Personalizations: getPersonalizations(visitor),
 		}
 	case types.TargetingExclusiveExperiment:
 		if campaignId > 0 {
-			targetingDataExclusiveExperiment := conditions.TargetingDataExclusiveExperiment{
+			conditionData = conditions.TargetingDataExclusiveExperiment{
+				VisitorVisits:       getVisitorVisits(visitor),
 				CurrentExperimentId: campaignId,
+				Variations:          getVariations(visitor),
+				Personalizations:    getPersonalizations(visitor),
 			}
-			if visitor != nil {
-				targetingDataExclusiveExperiment.Variations = visitor.Variations()
-				targetingDataExclusiveExperiment.Personalizations = visitor.Personalizations()
-			}
-			conditionData = targetingDataExclusiveExperiment
 		}
 	case types.TargetingCookie:
 		if visitor != nil {
@@ -168,4 +174,32 @@ func (tm *targetingManager) getConditionData(
 		"RETURN: targetingManager.getConditionData(targetingType: %s, visitor, visitorCode: %s, campaignId: %s) "+
 			"-> (conditionData: %s)", targetingType, visitorCode, campaignId, conditionData)
 	return conditionData
+}
+
+func getVisitorVisits(visitor storage.Visitor) *types.VisitorVisits {
+	if visitor != nil {
+		return visitor.VisitorVisits()
+	}
+	return nil
+}
+
+func getConversions(visitor storage.Visitor) storage.DataCollectionStorage[*types.Conversion] {
+	if visitor != nil {
+		return visitor.Conversions()
+	}
+	return emptyConversions
+}
+
+func getVariations(visitor storage.Visitor) storage.DataMapStorage[int, *types.AssignedVariation] {
+	if visitor != nil {
+		return visitor.Variations()
+	}
+	return emptyVariations
+}
+
+func getPersonalizations(visitor storage.Visitor) storage.DataMapStorage[int, *types.Personalization] {
+	if visitor != nil {
+		return visitor.Personalizations()
+	}
+	return emptyPersonalizations
 }

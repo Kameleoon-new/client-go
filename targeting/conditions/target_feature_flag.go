@@ -6,66 +6,64 @@ import (
 	"github.com/Kameleoon/client-go/v3/utils"
 )
 
+type TargetFeatureFlagCondition struct {
+	types.TargetingConditionBase
+	visitorScopeCondition
+	FeatureFlagId         int    `json:"featureFlagId,omitempty"`
+	ConditionVariationKey string `json:"variationKey,omitempty"`
+	ConditionRuleId       int    `json:"ruleId,omitempty"`
+}
+
 func NewTargetFeatureFlagCondition(c types.TargetingCondition) *TargetFeatureFlagCondition {
 	return &TargetFeatureFlagCondition{
 		TargetingConditionBase: types.TargetingConditionBase{
 			Type:    c.Type,
 			Include: true,
 		},
+		visitorScopeCondition: newVisitorScopeCondition(c, VisitScopeCurrentVisit),
 		FeatureFlagId:         c.FeatureFlagId,
 		ConditionVariationKey: c.VariationKey,
 		ConditionRuleId:       c.RuleId,
 	}
 }
 
-type TargetFeatureFlagCondition struct {
-	types.TargetingConditionBase
-	FeatureFlagId         int    `json:"featureFlagId,omitempty"`
-	ConditionVariationKey string `json:"variationKey,omitempty"`
-	ConditionRuleId       int    `json:"ruleId,omitempty"`
-}
-
 func (c *TargetFeatureFlagCondition) CheckTargeting(targetData interface{}) bool {
-	targetingData, ok := targetData.(TargetingDataTargetFeatureFlagCondition)
-	if !ok || (targetingData.DataFile == nil) || (targetingData.VariationStorage == nil) ||
-		(targetingData.VariationStorage.Len() == 0) {
+	td, ok := targetData.(TargetingDataTargetFeatureFlagCondition)
+	if !ok || td.DataFile == nil || td.VariationStorage == nil || td.VariationStorage.Len() == 0 {
 		return false
 	}
-	for _, rule := range c.getRules(targetingData.DataFile) {
-		if (rule == nil) || (rule.GetRuleBase() == nil) {
+	featureFlag := td.DataFile.GetFeatureFlagById(c.FeatureFlagId)
+	if featureFlag == nil {
+		return false
+	}
+	assignmentThresholdMillis := c.assignmentThresholdMillis(td.VisitorVisits)
+	for _, rule := range featureFlag.GetRules() {
+		if rule == nil || rule.GetRuleBase() == nil {
 			continue
 		}
-		assignedVariation := targetingData.VariationStorage.Get(rule.GetRuleBase().ExperimentId)
-		if assignedVariation == nil {
+		base := rule.GetRuleBase()
+		if c.ConditionRuleId > 0 && base.Id != c.ConditionRuleId {
 			continue
 		}
-		if c.ConditionVariationKey == "" {
-			return true
+		assignedVariation := td.VariationStorage.Get(base.ExperimentId)
+		if assignedVariation == nil || assignedVariation.AssignmentTime().UnixMilli() < assignmentThresholdMillis {
+			continue
 		}
-		variation := targetingData.DataFile.GetVariation(assignedVariation.VariationId())
-		if (variation != nil) && (variation.VariationKey == c.ConditionVariationKey) {
+		if c.matchesVariationKey(td, assignedVariation) {
 			return true
 		}
 	}
 	return false
 }
 
-func (c *TargetFeatureFlagCondition) getRules(dataFile types.IDataFile) []types.IRule {
-	ff := dataFile.GetFeatureFlagById(c.FeatureFlagId)
-	if ff == nil {
-		return nil
+func (c *TargetFeatureFlagCondition) matchesVariationKey(
+	targetingData TargetingDataTargetFeatureFlagCondition, variation *types.AssignedVariation,
+) bool {
+	if c.ConditionVariationKey == "" {
+		return true
 	}
-	rules := ff.GetRules()
-	if c.ConditionRuleId > 0 {
-		for _, rule := range rules {
-			if (rule.GetRuleBase() != nil) && (rule.GetRuleBase().Id == c.ConditionRuleId) {
-				return []types.IRule{rule}
-			}
-		}
-		return nil
-	} else {
-		return rules
-	}
+	vbe := targetingData.DataFile.GetVariation(variation.VariationId())
+	return (vbe != nil) && (vbe.VariationKey == c.ConditionVariationKey)
 }
 
 func (c TargetFeatureFlagCondition) String() string {
@@ -73,6 +71,7 @@ func (c TargetFeatureFlagCondition) String() string {
 }
 
 type TargetingDataTargetFeatureFlagCondition struct {
+	VisitorVisits    *types.VisitorVisits
 	DataFile         types.IDataFile
 	VariationStorage storage.DataMapStorage[int, *types.AssignedVariation]
 }

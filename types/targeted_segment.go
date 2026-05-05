@@ -23,14 +23,10 @@ func (ts *TargetedSegment) Id() int {
 }
 
 func (ts *TargetedSegment) QueryEncode() string {
-	nonce := ts.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, targetedSegmentEventType)
 	qb.Append(utils.QPSegmentId, strconv.Itoa(ts.id))
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, ts.Nonce())
 	return qb.String()
 }
 

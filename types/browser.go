@@ -68,17 +68,13 @@ func (b *Browser) Version() float32 {
 }
 
 func (b *Browser) QueryEncode() string {
-	nonce := b.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, browserEventType)
 	qb.Append(utils.QPBrowserIndex, utils.WritePositiveInt(int(b.browserType)))
 	if b.version != 0 {
 		qb.Append(utils.QPBrowserVersion, fmt.Sprintf("%f", b.version))
 	}
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, b.Nonce())
 	return qb.String()
 }
 

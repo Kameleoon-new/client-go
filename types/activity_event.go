@@ -13,12 +13,8 @@ func NewActivityEvent() *ActivityEvent {
 }
 
 func (ae *ActivityEvent) QueryEncode() string {
-	nonce := ae.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, activityEventType)
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, ae.Nonce())
 	return qb.String()
 }

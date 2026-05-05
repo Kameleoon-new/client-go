@@ -25,7 +25,7 @@ func NewPageViewWithTitle(url string, title string, referrers ...int) *PageView 
 		title:     title,
 		referrers: referrers,
 	}
-	pv.initSendale()
+	pv.initSendable()
 	return pv
 }
 
@@ -58,10 +58,6 @@ func (pv *PageView) QueryEncode() string {
 	if len(pv.url) == 0 {
 		return ""
 	}
-	nonce := pv.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, pageViewEventType)
 	qb.Append(utils.QPHref, pv.url)
@@ -69,7 +65,7 @@ func (pv *PageView) QueryEncode() string {
 	if len(pv.referrers) > 0 {
 		qb.Append(utils.QPReferrersIndices, pv.encodeReferrers())
 	}
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, pv.Nonce())
 	return qb.String()
 }
 func (pv *PageView) encodeReferrers() string {

@@ -17,15 +17,12 @@ type AssignedVariation struct {
 	assignmentTime time.Time
 }
 
+// Note: This is intended for internal use only and is not part of the stable API.
 func NewAssignedVariation(experimentId int, variationId int, ruleType RuleType) *AssignedVariation {
-	return &AssignedVariation{
-		experimentId:   experimentId,
-		variationId:    variationId,
-		ruleType:       ruleType,
-		assignmentTime: time.Now(),
-	}
+	return NewAssignedVariationWithTime(experimentId, variationId, ruleType, time.Now())
 }
 
+// Note: This is intended for internal use only and is not part of the stable API.
 func NewAssignedVariationWithTime(
 	experimentId int, variationId int, ruleType RuleType, assignmentTime time.Time,
 ) *AssignedVariation {
@@ -68,15 +65,11 @@ func (av *AssignedVariation) IsValid(respoolTime int) bool {
 }
 
 func (av *AssignedVariation) QueryEncode() string {
-	nonce := av.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, assignedVariationEventType)
 	qb.Append(utils.QPExperimentId, fmt.Sprint(av.experimentId))
 	qb.Append(utils.QPVariationId, fmt.Sprint(av.variationId))
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, av.Nonce())
 	return qb.String()
 }
 

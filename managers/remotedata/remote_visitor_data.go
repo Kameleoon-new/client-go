@@ -243,7 +243,11 @@ func (rvd *remoteVisitorData) parsePersonalizations(personalizationEvents []*dat
 			continue
 		}
 		if _, contains := rvd.personalizations[event.Data.Id]; !contains {
-			rvd.personalizations[event.Data.Id] = types.NewPersonalization(event.Data.Id, event.Data.VariationId)
+			rvd.personalizations[event.Data.Id] = types.NewPersonalization(
+				event.Data.Id,
+				event.Data.VariationId,
+				time.Unix(0, event.Time*int64(time.Millisecond)),
+			)
 		}
 	}
 }
@@ -253,7 +257,14 @@ func (rvd *remoteVisitorData) parseConversions(conversionEvents []*dataEventMode
 		if (event == nil) || (event.Data == nil) {
 			continue
 		}
-		c := types.NewConversionWithRevenue(event.Data.GoalId, event.Data.Revenue, event.Data.Negative)
+		c := types.InternalNewConversion(
+			event.Data.GoalId,
+			types.ConversionOptParams{
+				Revenue:  event.Data.Revenue,
+				Negative: event.Data.Negative,
+			},
+			time.Unix(0, event.Time*int64(time.Millisecond)),
+		)
 		rvd.conversions = append(rvd.conversions, c)
 	}
 }

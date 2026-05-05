@@ -110,10 +110,6 @@ func (g *Geolocation) Longitude() float64 {
 }
 
 func (g *Geolocation) QueryEncode() string {
-	nonce := g.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, geolocationEventType)
 	qb.Append(utils.QPCountry, g.country)
@@ -124,7 +120,7 @@ func (g *Geolocation) QueryEncode() string {
 		qb.Append(utils.QPLatitude, fmt.Sprintf("%f", g.latitude))
 		qb.Append(utils.QPLongitude, fmt.Sprintf("%f", g.longitude))
 	}
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, g.Nonce())
 	return qb.String()
 }
 

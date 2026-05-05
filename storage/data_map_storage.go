@@ -1,10 +1,11 @@
 package storage
 
 import (
-	"github.com/Kameleoon/client-go/v3/logging"
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/Kameleoon/client-go/v3/logging"
 )
 
 type DataMapStorage[K comparable, V any] interface {

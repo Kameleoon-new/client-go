@@ -77,15 +77,11 @@ func (os *OperatingSystem) Type() OperatingSystemType {
 }
 
 func (os *OperatingSystem) QueryEncode() string {
-	nonce := os.Nonce()
-	if len(nonce) == 0 {
-		return ""
-	}
 	qb := utils.NewQueryBuilder()
 	qb.Append(utils.QPEventType, operatingSystemEventType)
 	qb.Append(utils.QPOs, os.osType.String())
 	qb.Append(utils.QPOsIndex, fmt.Sprintf("%d", os.osType))
-	qb.Append(utils.QPNonce, nonce)
+	qb.Append(utils.QPNonce, os.Nonce())
 	return qb.String()
 }
 

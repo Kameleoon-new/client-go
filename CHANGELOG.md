@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## 3.20.0 - 2026-05-05
+### Features
+* Added support for **during the current visit** and **during any of the last visits** settings across the following targeting conditions:
+  - Converted Goal
+  - Feature Flag
+  - Web Experiment
+  - Personalization
+  - Exclusive Campaign
+
 ## 3.19.0 - 2026-04-22
 ### Features
 * Added support for variation simulation when feature flags are **inactive (OFF state)** across the following methods:

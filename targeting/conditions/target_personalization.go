@@ -7,6 +7,7 @@ import (
 
 type TargetPersonalizationCondition struct {
 	types.TargetingConditionBase
+	visitorScopeCondition
 	personalizationId int
 }
 
@@ -16,13 +17,22 @@ func NewTargetPersonalizationCondition(c types.TargetingCondition) *TargetPerson
 			Type:    c.Type,
 			Include: true,
 		},
-		personalizationId: c.PersonalizationId,
+		visitorScopeCondition: newVisitorScopeCondition(c, VisitScopeCurrentVisit),
+		personalizationId:     c.PersonalizationId,
 	}
 }
 
 func (c *TargetPersonalizationCondition) CheckTargeting(targetData interface{}) bool {
-	if personalizations, ok := targetData.(storage.DataMapStorage[int, *types.Personalization]); ok {
-		return personalizations.Get(c.personalizationId) != nil
+	targetingData, ok := targetData.(TargetingDataTargetPersonalizationCondition)
+	if !ok || (targetingData.Personalizations == nil) || (c.personalizationId == types.UndefinedPersonalizationId) {
+		return false
 	}
-	return false
+	personalization := targetingData.Personalizations.Get(c.personalizationId)
+	return (personalization != nil) &&
+		(personalization.AssignmentTime().UnixMilli() >= c.assignmentThresholdMillis(targetingData.VisitorVisits))
+}
+
+type TargetingDataTargetPersonalizationCondition struct {
+	VisitorVisits    *types.VisitorVisits
+	Personalizations storage.DataMapStorage[int, *types.Personalization]
 }
