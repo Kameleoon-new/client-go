@@ -23,6 +23,8 @@ All notable changes to this project will be documented in this file.
         - [`GetFeatureVariable`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getfeaturevariable)
 * Improved the performance of the [`getDataFile()`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getdatafile) instance that is refreshed whenever the SDK configuration is updated.
 * The [`getFeatureList`](https://developers.kameleoon.com/feature-management-and-experimentation/web-sdks/go-sdk/#getfeaturelist) method has been deprecated in favor of `getDataFile()`.
+### Bug fixes
+* Fixed an issue where permanently rejected Data API tracking requests (for example, responses with a `429` status code) prevented visitor sessions from being cleaned up. This could cause sessions to remain in memory indefinitely, leading to excessive RAM usage and potential server slowdowns.
 
 ## 3.18.0 - 2026-02-13
 ### Features
