@@ -2,6 +2,7 @@ package network
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -69,6 +70,7 @@ func (r Request) String() string {
 
 type Response struct {
 	Err         error             // optional (nil)
+	IsTimeout   bool              // optional (false); indicates `Err` is caused by a timeout
 	Code        int               // optional (0)
 	Body        []byte            // optional ([])
 	HeadersRead map[string]string // optional ({})
@@ -136,9 +138,22 @@ func (np *NetProviderImpl) Call(request *Request, headersToRead []string) Respon
 		headersRead := np.readHeaders(resp, headersToRead)
 		response = Response{Code: resp.StatusCode(), Body: resp.Body(), HeadersRead: headersRead, Request: request}
 	} else {
-		response = Response{Err: err, Request: request}
+		response = Response{Err: err, IsTimeout: isTimeoutError(err), Request: request}
 	}
 	return response
+}
+
+// isTimeoutError determines whether the error returned by the underlying HTTP client is caused
+// by a timeout. Timeout detection is specific to the HTTP client used by the provider.
+func isTimeoutError(err error) bool {
+	if errors.Is(err, fasthttp.ErrTimeout) ||
+		errors.Is(err, fasthttp.ErrDialTimeout) ||
+		errors.Is(err, fasthttp.ErrTLSHandshakeTimeout) {
+		return true
+	}
+	// Covers `net.Error` and any other error which reports a timeout, e.g. `os.ErrDeadlineExceeded`.
+	var timeoutErr interface{ Timeout() bool }
+	return errors.As(err, &timeoutErr) && timeoutErr.Timeout()
 }
 
 func (*NetProviderImpl) setHeaders(req *fasthttp.Request, request *Request) {

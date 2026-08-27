@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/Kameleoon/client-go/v3/events"
 	"github.com/Kameleoon/client-go/v3/utils"
 )
 
@@ -25,7 +26,7 @@ func (nm *NetworkManagerImpl) FetchAccessJWToken(basicAuthorizationToken string,
 		Data:          data,
 		Timeout:       timeout,
 	}
-	response, err := nm.makeCall(&request, NetworkCallAttemptsNumberUncritical, -1)
+	response, err := nm.makeCall(events.RequestTypeAccessToken, &request, NetworkCallAttemptsNumberUncritical, -1)
 	return response.Body, err
 }
 

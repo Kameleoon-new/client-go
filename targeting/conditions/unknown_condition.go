@@ -19,6 +19,6 @@ func NewUnknownCondition(c types.TargetingCondition) *UnknownCondition {
 }
 
 func (c *UnknownCondition) CheckTargeting(targetData interface{}) bool {
-	logging.Warning("Condition of unknown type '%s' evaluated as true", c.Type)
-	return true
+	logging.Warning("Condition of unknown type '%s' evaluated as false", c.Type)
+	return false
 }

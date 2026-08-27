@@ -5,12 +5,13 @@ import (
 	"time"
 
 	"github.com/Kameleoon/client-go/v3/errs"
+	"github.com/Kameleoon/client-go/v3/events"
 	"github.com/Kameleoon/client-go/v3/logging"
 	"github.com/Kameleoon/client-go/v3/types"
 )
 
 const (
-	networkCallRetriesNumberCritical    = 2
+	networkCallRetriesNumberCritical    = 1
 	NetworkCallAttemptsNumberCritical   = networkCallRetriesNumberCritical + 1 // +1 for initial request
 	NetworkCallAttemptsNumberUncritical = 1
 
@@ -54,6 +55,7 @@ type NetworkManagerImpl struct {
 	Logger                 logging.Logger
 	TrackingCallRetryDelay time.Duration
 	accessTokenSource      AccessTokenSource
+	eventManager           events.EventManager
 }
 
 func NewNetworkManagerImpl(
@@ -62,6 +64,7 @@ func NewNetworkManagerImpl(
 	netProvider NetProvider,
 	urlProvider UrlProvider,
 	accessTokenSourceFactory AccessTokenSourceFactory,
+	eventManager events.EventManager,
 ) *NetworkManagerImpl {
 	nm := &NetworkManagerImpl{
 		Environment:            environment,
@@ -69,6 +72,7 @@ func NewNetworkManagerImpl(
 		NetProvider:            netProvider,
 		UrlProvider:            urlProvider,
 		TrackingCallRetryDelay: DefaultTrackingCallRetryDelay,
+		eventManager:           eventManager,
 	}
 	nm.accessTokenSource = accessTokenSourceFactory.create(nm)
 	return nm
@@ -103,7 +107,8 @@ func (nm *NetworkManagerImpl) ensureTimeout(request *Request) {
 }
 
 func (nm *NetworkManagerImpl) makeCall(
-	request *Request, attemptCount int, retryDelay time.Duration, headersToRead ...string,
+	requestType events.RequestType, request *Request, attemptCount int, retryDelay time.Duration,
+	headersToRead ...string,
 ) (Response, error) {
 	logging.Debug("Running request %s with retry limit %s, retry delay %s ms", request, attemptCount, retryDelay)
 	nm.ensureTimeout(request)
@@ -116,7 +121,7 @@ func (nm *NetworkManagerImpl) makeCall(
 			time.Sleep(retryDelay)
 		}
 		nm.authorizeIfRequired(request)
-		response = nm.NetProvider.Call(request, headersToRead)
+		response = nm.callNetProvider(requestType, request, headersToRead)
 		if isTokenRejected, err = nm.processErrors(request, &response, logLevel); err == nil {
 			logging.Debug("Fetched response %s for request %s", response, request)
 			return response, nil
@@ -125,13 +130,44 @@ func (nm *NetworkManagerImpl) makeCall(
 	if isTokenRejected {
 		logging.Error("Wrong Kameleoon API access token slows down the SDK's requests")
 		request.Authorization = ""
-		response = nm.NetProvider.Call(request, headersToRead)
+		response = nm.callNetProvider(requestType, request, headersToRead)
 		if _, err = nm.processErrors(request, &response, logging.ERROR); err == nil {
 			logging.Debug("Fetched response %s for request %s", response, request)
 			return response, nil
 		}
 	}
 	return Response{}, err
+}
+
+// callNetProvider performs a single HTTP request attempt and fires the corresponding
+// `EventTypeHttpRequest` SDK event.
+func (nm *NetworkManagerImpl) callNetProvider(
+	requestType events.RequestType, request *Request, headersToRead []string,
+) Response {
+	startTime := time.Now()
+	response := nm.NetProvider.Call(request, headersToRead)
+	duration := time.Since(startTime)
+	nm.fireHttpRequestEvent(requestType, &response, duration)
+	return response
+}
+
+func (nm *NetworkManagerImpl) fireHttpRequestEvent(
+	requestType events.RequestType, response *Response, duration time.Duration,
+) {
+	if (response.Err == nil) && response.IsExpectedStatusCode() {
+		nm.eventManager.FireHttpRequestSucceeded(requestType, response.Code, duration)
+		return
+	}
+	var failure *events.HttpRequestFailure
+	switch {
+	case response.Err == nil:
+		failure = events.NewHttpRequestFailureFromHttpStatus(response.Code)
+	case response.IsTimeout:
+		failure = events.NewHttpRequestFailureOfCancellation()
+	default:
+		failure = events.NewHttpRequestFailureFromError(response.Err)
+	}
+	nm.eventManager.FireHttpRequestFailed(requestType, failure, duration)
 }
 
 func (nm *NetworkManagerImpl) getLogLevel(attempt int, attemptCount int) logging.LogLevel {

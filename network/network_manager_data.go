@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/Kameleoon/client-go/v3/events"
 	"github.com/Kameleoon/client-go/v3/types"
 )
 
@@ -20,7 +21,7 @@ func (nm *NetworkManagerImpl) GetRemoteData(key string, timeout time.Duration) (
 		Timeout:        timeout,
 		IsAuthRequired: true,
 	}
-	response, err := nm.makeCall(&request, NetworkCallAttemptsNumberUncritical, -1)
+	response, err := nm.makeCall(events.RequestTypeRemoteData, &request, NetworkCallAttemptsNumberUncritical, -1)
 	return response.Body, err
 }
 
@@ -35,7 +36,8 @@ func (nm *NetworkManagerImpl) GetRemoteVisitorData(
 		Timeout:        timeout,
 		IsAuthRequired: true,
 	}
-	response, err := nm.makeCall(&request, NetworkCallAttemptsNumberUncritical, -1)
+	response, err := nm.makeCall(
+		events.RequestTypeRemoteVisitorData, &request, NetworkCallAttemptsNumberUncritical, -1)
 	return response.Body, err
 }
 
@@ -52,7 +54,8 @@ func (nm *NetworkManagerImpl) SendTrackingData(trackingLines string) (bool, erro
 		Timeout:        nm.DefaultTimeout,
 		IsAuthRequired: true,
 	}
-	_, err := nm.makeCall(&request, NetworkCallAttemptsNumberCritical, nm.TrackingCallRetryDelay)
+	_, err := nm.makeCall(
+		events.RequestTypeTracking, &request, NetworkCallAttemptsNumberCritical, nm.TrackingCallRetryDelay)
 	if err != nil {
 		return false, err
 	}

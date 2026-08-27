@@ -1,5 +1,9 @@
 package network
 
+import (
+	"github.com/Kameleoon/client-go/v3/events"
+)
+
 const (
 	HeaderSdkType         = "X-Kameleoon-SDK-Type"
 	HeaderSdkVersion      = "X-Kameleoon-SDK-Version"
@@ -21,7 +25,8 @@ func (nm *NetworkManagerImpl) FetchConfiguration(ts int64, ifModifiedSince strin
 	if ifModifiedSince != "" {
 		request.Headers[HeaderIfModifiedSince] = ifModifiedSince
 	}
-	response, err := nm.makeCall(request, NetworkCallAttemptsNumberCritical, -1, HeaderLastModified)
+	response, err := nm.makeCall(
+		events.RequestTypeDataFile, request, NetworkCallAttemptsNumberCritical, -1, HeaderLastModified)
 	if err != nil {
 		return FetchedConfiguration{}, err
 	}

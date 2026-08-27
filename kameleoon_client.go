@@ -9,6 +9,7 @@ import (
 
 	"github.com/Kameleoon/client-go/v3/configuration"
 	"github.com/Kameleoon/client-go/v3/errs"
+	"github.com/Kameleoon/client-go/v3/events"
 	"github.com/Kameleoon/client-go/v3/managers/data"
 	"github.com/Kameleoon/client-go/v3/managers/hybrid"
 	"github.com/Kameleoon/client-go/v3/managers/remotedata"
@@ -103,7 +104,27 @@ func (p SetForcedVariationOptParams) ForceTargeting(value bool) SetForcedVariati
 }
 
 type KameleoonClient interface {
-	WaitInit() error
+	// WaitInit waits for the initialization of the SDK, but no longer than the specified
+	// timeout (optional; the default timeout of the client configuration — `DefaultTimeout`,
+	// 10 seconds unless overridden — is used when omitted). It returns the result of the
+	// configuration fetch: nil once the SDK has been initialized, or an `errs.Initialization`
+	// error as soon as the fetch has failed (without waiting for background retries) or
+	// when no fetch result is available within the timeout. In the timeout case the
+	// returned error wraps `context.DeadlineExceeded`.
+	//
+	// A non-positive timeout makes the call return immediately (with the error, unless a
+	// fetch result is already available). An expired timeout does not affect the SDK state:
+	// once the SDK becomes ready, a subsequent call returns nil.
+	WaitInit(timeout ...time.Duration) error
+
+	// IsReady indicates whether the SDK is ready for use, i.e. its configuration has been
+	// successfully loaded. Unlike WaitInit, it returns immediately without blocking.
+	//
+	// It returns true if the SDK has been successfully initialized, false otherwise
+	// (including while the initialization is still pending or has failed).
+	//
+	// Readiness is monotonic: once the SDK becomes ready it stays ready.
+	IsReady() bool
 
 	// GetVisitorCode should be called to get the Kameleoon visitorCode for the current visitor.
 	//
@@ -287,6 +308,20 @@ type KameleoonClient interface {
 		visitorCode string, addData bool, filter types.RemoteVisitorDataFilter, params ...RemoteVisitorDataOptParams,
 	) ([]types.Data, error)
 
+	// SetEventHandler sets the SDK event handler for the specified event type.
+	//
+	// The handler is called when the corresponding SDK event occurs. Supported event types are
+	// defined by the `events.EventType` constants. Passing nil clears the handler for the
+	// specified event type.
+	//
+	// Parameters:
+	// - eventType: The SDK event type to handle, one of the `events.EventType` constants.
+	// - handler: The handler to register, or nil to remove the current handler. The handler must
+	//   implement the interface required by the selected event type
+	//   (`events.HttpRequestHandler` or `events.DataFileUpdateHandler`).
+	SetEventHandler(eventType events.EventType, handler events.EventHandler)
+
+	// Deprecated: Please use `SetEventHandler(events.EventTypeDataFileUpdate, handler)` instead
 	OnUpdateConfiguration(handler func())
 
 	// GetFeatureList returns a list of all feature flag keys
@@ -352,6 +387,7 @@ type kameleoonClient struct {
 	cfg                  *KameleoonClientConfig
 	visitorManager       storage.VisitorManager
 	networkManager       network.NetworkManager
+	eventManager         events.EventManager
 	cookieManager        cookie.CookieManager
 	hybridManager        hybrid.HybridManager
 	warehouseManager     warehouse.WarehouseManager
@@ -394,14 +430,17 @@ func newClient(siteCode string, cfg *KameleoonClientConfig) (*kameleoonClient, e
 		cfg.Network.MaxConnsPerHost, cfg.Network.ProxyURL)
 	up := network.NewUrlProviderImpl(siteCode, cfg.NetworkDomain, utils.SdkName, utils.SdkVersion)
 	atsf := &network.AccessTokenSourceFactoryImpl{ClientId: cfg.ClientID, ClientSecret: cfg.ClientSecret}
-	nm := network.NewNetworkManagerImpl(cfg.Environment, cfg.DefaultTimeout, np, up, atsf)
+	em := events.NewEventManager()
+	nm := network.NewNetworkManagerImpl(cfg.Environment, cfg.DefaultTimeout, np, up, atsf, em)
 	vm := newVisitorManager(dm, cfg)
 	hm, _ := hybrid.NewHybridManagerImpl(5*time.Second, dm)
 	tarM := targeting.NewTargetingManager(dm, vm)
 	rdm := remotedata.NewRemoteDataManager(dm, nm, vm)
 	trM := tracking.NewTrackingManagerImpl(dm, nm, vm, cfg.TrackingInterval)
-	cm := configuration.NewConfigurationManager(dm, nm, &realtime.NetSseClient{}, cfg.RefreshInterval, cfg.Environment)
-	client := newClientInternal(cfg, dm, nm, vm, hm, tarM, rdm, trM, cm)
+	readiness := newKameleoonClientReadiness(siteCode, cfg.Environment)
+	cm := configuration.NewConfigurationManager(dm, nm, em, &realtime.NetSseClient{}, cfg.RefreshInterval,
+		cfg.Environment, readiness)
+	client := newClientInternal(cfg, readiness, dm, nm, vm, hm, tarM, rdm, trM, cm, em)
 	logging.Info("RETURN: newClient(siteCode: %s, config: %s) -> (client, error: <nil>)",
 		siteCode, cfg)
 	return client, nil
@@ -409,6 +448,7 @@ func newClient(siteCode string, cfg *KameleoonClientConfig) (*kameleoonClient, e
 
 func newClientInternal(
 	cfg *KameleoonClientConfig,
+	readiness *kameleoonClientReadiness,
 	dataManager data.DataManager,
 	networkManager network.NetworkManager,
 	visitorManager storage.VisitorManager,
@@ -417,14 +457,16 @@ func newClientInternal(
 	remoteDataManager remotedata.RemoteDataManager,
 	trackingManager tracking.TrackingManager,
 	configurationManager configuration.ConfigurationManager,
+	eventManager events.EventManager,
 ) *kameleoonClient {
 	client := &kameleoonClient{
 		cfg:                  cfg,
-		readiness:            newKameleoonClientReadiness(),
+		readiness:            readiness,
 		dataManager:          dataManager,
 		visitorManager:       visitorManager,
 		hybridManager:        hybridManager,
 		networkManager:       networkManager,
+		eventManager:         eventManager,
 		cookieManager:        cookie.NewCookieManagerImpl(dataManager, visitorManager, cfg.TopLevelDomain),
 		warehouseManager:     warehouse.NewWarehouseManagerImpl(networkManager, visitorManager),
 		targetingManager:     targetingManager,
@@ -440,11 +482,26 @@ func newVisitorManager(dm data.DataManager, cfg *KameleoonClientConfig) storage.
 	return storage.NewVisitorManagerImpl(dm, cfg.SessionDuration)
 }
 
-func (c *kameleoonClient) WaitInit() error {
-	logging.Info("CALL: kameleoonClient.WaitInit()")
-	err := c.readiness.Wait()
-	logging.Info("RETURN: kameleoonClient.WaitInit() -> (error: %s)", err)
+func (c *kameleoonClient) WaitInit(timeout ...time.Duration) error {
+	t := c.cfg.DefaultTimeout
+	if len(timeout) > 0 {
+		t = timeout[0]
+	}
+	logging.Info("CALL: kameleoonClient.WaitInit(timeout: %s)", t)
+	err := c.readiness.WaitWithTimeout(t)
+	if err != nil {
+		logging.Error("Kameleoon failed to initialize due to error: %s", err)
+	} else {
+		logging.Info("Kameleoon is initialized")
+	}
+	logging.Info("RETURN: kameleoonClient.WaitInit(timeout: %s) -> (error: %s)", t, err)
 	return err
+}
+
+func (c *kameleoonClient) IsReady() bool {
+	ready := c.readiness.IsReady()
+	logging.Info("CALL/RETURN: kameleoonClient.IsReady() -> (ready: %t)", ready)
+	return ready
 }
 
 func (c *kameleoonClient) close() {
@@ -1341,12 +1398,23 @@ func (c *kameleoonClient) GetRemoteVisitorDataWithFilter(
 
 func (c *kameleoonClient) updateConfigInitially() {
 	logging.Debug("CALL: kameleoonClient.updateConfigInitially()")
-	err := c.configurationManager.Start()
-	c.readiness.set(err)
+	// The configuration manager reports the readiness state itself on every fetch,
+	// so the returned error only needs to be logged here.
+	if err := c.configurationManager.Start(); err != nil {
+		logging.Error("SDK initialization failed due to error: %s", err)
+	}
 	logging.Debug("RETURN: kameleoonClient.updateConfigInitially()")
 }
 
+func (c *kameleoonClient) SetEventHandler(eventType events.EventType, handler events.EventHandler) {
+	logging.Info("CALL: kameleoonClient.SetEventHandler(eventType: %s, handler)", eventType)
+	c.eventManager.SetEventHandler(eventType, handler)
+	logging.Info("RETURN: kameleoonClient.SetEventHandler(eventType: %s, handler)", eventType)
+}
+
 func (c *kameleoonClient) OnUpdateConfiguration(handler func()) {
+	logging.Info("[DEPRECATION] `OnUpdateConfiguration` is deprecated. " +
+		"Please use `SetEventHandler(events.EventTypeDataFileUpdate, handler)` instead.")
 	c.configurationManager.OnUpdateConfiguration(handler)
 	logging.Info("CALL/RETURN: kameleoonClient.OnUpdateConfiguration(handler)")
 }

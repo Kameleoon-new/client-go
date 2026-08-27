@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## 3.22.0 - 2026-08-27
+### Features
+* Added the new [`IsReady`][isReady] method, which returns `true` once the SDK has successfully loaded its configuration and is ready for use, and `false` otherwise (for example, while initialization is still in progress or has failed). Unlike [`WaitInit`][waitInit], it returns immediately without blocking.
+* The [`WaitInit`][waitInit] method now accepts an optional `timeout` parameter, which limits how long the call may block; when omitted, the default timeout of the client configuration (`DefaultTimeout`, 10 seconds unless overridden) is used instead of waiting indefinitely. The call returns the result of the configuration fetch (`nil` once the SDK is ready, or an `errs.Initialization` error as soon as the fetch has failed); if no fetch result is available within the timeout, it returns an `errs.Initialization` error wrapping `context.DeadlineExceeded`.
+### Bug fixes
+* Targeting conditions of a type unsupported by the SDK (e.g. web-specific conditions) now evaluate to `False` instead of `True`, so visitors are no longer targeted by conditions the SDK cannot check.
+* The [`WaitInit`][waitInit] method now returns an `errs.Initialization` error when the SDK cannot load its configuration. Previously it completed successfully even though the SDK was not usable. Once the SDK becomes ready, a subsequent `WaitInit` call completes successfully.
+
+[isReady]: https://docs.kameleoon.com/developer-docs/sdks/web-sdks/go-sdk#isready
+[waitInit]: https://docs.kameleoon.com/developer-docs/sdks/web-sdks/go-sdk#waitinit
+
 ## 3.20.0 - 2026-05-05
 ### Features
 * Added support for **during the current visit** and **during any of the last visits** settings across the following targeting conditions:
