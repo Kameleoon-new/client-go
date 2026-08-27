@@ -8,7 +8,14 @@ All notable changes to this project will be documented in this file.
 ### Bug fixes
 * Targeting conditions of a type unsupported by the SDK (e.g. web-specific conditions) now evaluate to `False` instead of `True`, so visitors are no longer targeted by conditions the SDK cannot check.
 * The [`WaitInit`][waitInit] method now returns an `errs.Initialization` error when the SDK cannot load its configuration. Previously it completed successfully even though the SDK was not usable. Once the SDK becomes ready, a subsequent `WaitInit` call completes successfully.
+* Added support for SDK event handlers through the new [`SetEventHandler`][setEventHandler] API:
+  - `events.EventTypeDataFileUpdate` notifies when the SDK data file (configuration) is updated with [polling](https://docs.kameleoon.com/developer-docs/feature-experimentation/technical-reference/technical-considerations#polling-default) or [streaming](https://docs.kameleoon.com/developer-docs/feature-experimentation/technical-reference/technical-considerations#streaming-premium-option) modes.
+  - `events.EventTypeHttpRequest` notifies when SDK HTTP requests complete successfully or fail.
+  - HTTP request events include the request type, HTTP status or failure details, and request duration.
+  - Passing `nil` to `SetEventHandler` clears the handler for the selected event type.
+* The [`OnUpdateConfiguration`](https://docs.kameleoon.com/developer-docs/sdks/web-sdks/go-sdk#onupdateconfiguration) method has been deprecated in favor of `SetEventHandler` with the `events.EventTypeDataFileUpdate` event type.
 
+[setEventHandler]: https://docs.kameleoon.com/developer-docs/sdks/web-sdks/go-sdk#seteventhandler
 [isReady]: https://docs.kameleoon.com/developer-docs/sdks/web-sdks/go-sdk#isready
 [waitInit]: https://docs.kameleoon.com/developer-docs/sdks/web-sdks/go-sdk#waitinit
 
