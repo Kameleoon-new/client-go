@@ -2,18 +2,18 @@ package kameleoon
 
 import (
 	"github.com/Kameleoon/client-go/v3/logging"
-	cmap "github.com/orcaman/concurrent-map/v2"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 var KameleoonClientFactory = newKameleoonClientFactory()
 
 type kameleoonClientFactory struct {
-	clients cmap.ConcurrentMap[string, *kameleoonClient]
+	clients *xsync.MapOf[string, *kameleoonClient]
 }
 
 func newKameleoonClientFactory() *kameleoonClientFactory {
 	return &kameleoonClientFactory{
-		clients: cmap.New[*kameleoonClient](),
+		clients: xsync.NewMapOf[string, *kameleoonClient](),
 	}
 }
 
@@ -41,10 +41,10 @@ func (cf *kameleoonClientFactory) CreateFromFile(siteCode string, cfgPath string
 func (cf *kameleoonClientFactory) createWithConfigSource(siteCode string,
 	cfgSrc func() (*KameleoonClientConfig, error)) (KameleoonClient, error) {
 	var err error
-	return cf.clients.Upsert(siteCode, nil,
-		func(exist bool, former, _ *kameleoonClient) *kameleoonClient {
-			if former != nil {
-				return former
+	client, _ := cf.clients.Compute(siteCode,
+		func(former *kameleoonClient, loaded bool) (*kameleoonClient, bool) {
+			if loaded {
+				return former, false
 			}
 			var client *kameleoonClient
 			cfg, cerr := cfgSrc()
@@ -52,17 +52,18 @@ func (cf *kameleoonClientFactory) createWithConfigSource(siteCode string,
 				client, cerr = newClient(siteCode, cfg)
 			}
 			err = cerr
-			return client
-		}), err
+			return client, err != nil // a failed creation leaves no entry behind
+		})
+	return client, err
 }
 
 func (cf *kameleoonClientFactory) Forget(siteCode string) {
 	logging.Info("CALL: KameleoonClientFactory.Forget(siteCode: %s)", siteCode)
-	cf.clients.RemoveCb(siteCode, func(_ string, client *kameleoonClient, exists bool) bool {
-		if client != nil {
+	cf.clients.Compute(siteCode, func(client *kameleoonClient, loaded bool) (*kameleoonClient, bool) {
+		if loaded {
 			client.close()
 		}
-		return true
+		return client, true
 	})
 	logging.Info("RETURN: KameleoonClientFactory.Forget(siteCode: %s)", siteCode)
 }

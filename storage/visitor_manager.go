@@ -6,7 +6,7 @@ import (
 	"github.com/Kameleoon/client-go/v3/logging"
 	"github.com/Kameleoon/client-go/v3/managers/data"
 	"github.com/Kameleoon/client-go/v3/types"
-	cmap "github.com/orcaman/concurrent-map/v2"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 type VisitorManager interface {
@@ -28,7 +28,7 @@ type VisitorManager interface {
 
 type VisitorManagerImpl struct {
 	dataManager      data.DataManager
-	visitors         cmap.ConcurrentMap[string, *VisitorImpl]
+	visitors         *xsync.MapOf[string, *VisitorImpl]
 	expirationPeriod time.Duration
 	purgeTicker      *time.Ticker
 	stopChan         chan struct{}
@@ -40,7 +40,7 @@ func NewVisitorManagerImpl(
 	logging.Debug("CALL: NewVisitorManagerImpl(expirationPeriod: %s)", expirationPeriod)
 	vm := &VisitorManagerImpl{
 		dataManager:      dataManager,
-		visitors:         cmap.New[*VisitorImpl](),
+		visitors:         xsync.NewMapOf[string, *VisitorImpl](),
 		expirationPeriod: expirationPeriod,
 		purgeTicker:      time.NewTicker(expirationPeriod),
 		stopChan:         make(chan struct{}, 8),
@@ -77,18 +77,18 @@ func (vm *VisitorManagerImpl) stop() {
 }
 
 func (vm *VisitorManagerImpl) GetVisitor(visitorCode string) Visitor {
-	// It is essential to update a visitor's last activity time before the visitor can be removed.
-	// However, the used map type `cmap.ConcurrentMap` does not provide a "tryGet" method
-	// with callback support. That is the reason why `RemoveCb` method is used as a "tryGet".
 	logging.Debug("CALL: VisitorManagerImpl.GetVisitor(visitorCode: %s)", visitorCode)
 	var visitor Visitor
-	vm.visitors.RemoveCb(visitorCode, func(vc string, v *VisitorImpl, exists bool) bool {
-		if v != nil {
+	// Compute runs the callback under the map's bucket lock, so the activity time is updated before `purge`
+	// can decide to remove the visitor. A missing visitor is left missing (delete of an absent key is a no-op).
+	if v, ok := vm.visitors.Compute(visitorCode, func(v *VisitorImpl, loaded bool) (*VisitorImpl, bool) {
+		if loaded {
 			v.UpdateLastActivityTime()
-			visitor = v
 		}
-		return false
-	})
+		return v, !loaded
+	}); ok {
+		visitor = v
+	}
 	logging.Debug("RETURN: VisitorManagerImpl.GetVisitor(visitorCode: %s) -> (visitor: %s)",
 		visitorCode, visitor)
 	return visitor
@@ -99,12 +99,12 @@ func (vm *VisitorManagerImpl) GetOrCreateVisitor(visitorCode string) Visitor {
 }
 func (vm *VisitorManagerImpl) getOrCreateVisitor(visitorCode string) *VisitorImpl {
 	logging.Debug("CALL: VisitorManagerImpl.getOrCreateVisitor(visitorCode: %s)", visitorCode)
-	visitor := vm.visitors.Upsert(visitorCode, nil, func(exist bool, former, _ *VisitorImpl) *VisitorImpl {
-		if former != nil {
+	visitor, _ := vm.visitors.Compute(visitorCode, func(former *VisitorImpl, loaded bool) (*VisitorImpl, bool) {
+		if loaded {
 			former.UpdateLastActivityTime()
-			return former
+			return former, false
 		}
-		return NewVisitorImpl()
+		return NewVisitorImpl(), false
 	})
 	logging.Debug("RETURN: VisitorManagerImpl.getOrCreateVisitor(visitorCode: %s) -> (visitor)", visitorCode)
 	return visitor
@@ -114,7 +114,7 @@ func (vm *VisitorManagerImpl) PeekVisitor(visitorCode string) Visitor {
 	logging.Debug("CALL: VisitorManagerImpl.PeekVisitor(visitorCode: %s)", visitorCode)
 
 	var visitor Visitor
-	if v, ok := vm.visitors.Get(visitorCode); ok {
+	if v, ok := vm.visitors.Load(visitorCode); ok {
 		visitor = v
 	}
 
@@ -175,7 +175,7 @@ func (vm *VisitorManagerImpl) processCustomData(
 		visitor.SetMappingIdentifier(&visitorCode)
 		userId := cd.Values()[0]
 		if visitorCode != userId {
-			vm.visitors.Set(userId, cloneVisitorImpl(visitor))
+			vm.visitors.Store(userId, cloneVisitorImpl(visitor))
 			logging.Info("Linked anonymous visitor '%s' with user '%s'", visitorCode, userId)
 		}
 		return types.NewMappingIdentifier(cd)
@@ -217,36 +217,26 @@ func isMappingIdentifier(cdi *types.CustomDataInfo, cd types.ICustomData) bool {
 }
 
 func (vm *VisitorManagerImpl) Enumerate(f func(string, Visitor) bool) {
-	for kv := range vm.visitors.IterBuffered() {
-		if !f(kv.Key, kv.Val) {
-			return
-		}
-	}
+	vm.visitors.Range(func(visitorCode string, visitor *VisitorImpl) bool {
+		return f(visitorCode, visitor)
+	})
 }
 func (vm *VisitorManagerImpl) Len() int {
-	return vm.visitors.Count()
+	return vm.visitors.Size()
 }
 
 func (vm *VisitorManagerImpl) purge() {
 	logging.Debug("CALL: VisitorManagerImpl.purge()")
 	expiredDT := time.Now().Add(-vm.expirationPeriod)
-	var vrs []struct {
-		vc string
-		v  *VisitorImpl
-	}
-	vm.visitors.IterCb(func(vc string, v *VisitorImpl) {
+	vm.visitors.Range(func(visitorCode string, v *VisitorImpl) bool {
 		if v.LastActivityTime().Before(expiredDT) {
-			vrs = append(vrs, struct {
-				vc string
-				v  *VisitorImpl
-			}{vc: vc, v: v})
+			// re-checked under the bucket lock: the visitor may have been touched since the Range read it
+			vm.visitors.Compute(visitorCode, func(v *VisitorImpl, loaded bool) (*VisitorImpl, bool) {
+				return v, loaded && v.LastActivityTime().Before(expiredDT)
+			})
 		}
+		return true
 	})
-	for _, vr := range vrs {
-		vm.visitors.RemoveCb(vr.vc, func(key string, v *VisitorImpl, exists bool) bool {
-			return v.LastActivityTime().Before(expiredDT)
-		})
-	}
 	logging.Debug("RETURN: VisitorManagerImpl.purge()")
 }
 

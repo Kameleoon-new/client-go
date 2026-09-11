@@ -8,6 +8,7 @@ import (
 	"github.com/Kameleoon/client-go/v3/events"
 	"github.com/Kameleoon/client-go/v3/logging"
 	"github.com/Kameleoon/client-go/v3/types"
+	"github.com/Kameleoon/client-go/v3/utils"
 )
 
 const (
@@ -195,7 +196,7 @@ func (nm *NetworkManagerImpl) processErrors(request *Request, response *Response
 		logging.Log(logLevel, "%s call %s failed: Received unexpected status code: %s, body: %s",
 			request.Method, request.Url, response.Code, string(response.Body[:]))
 		if (response.Code == codeUnauthorized) && (request.Authorization != "") {
-			logging.Log(logLevel, "Unexpected rejection of access token %s", request.Authorization)
+			logging.Log(logLevel, "Unexpected rejection of access token '%s'", utils.Secret(request.Authorization))
 			nm.accessTokenSource.DiscardToken(request.Authorization)
 			isTokenRejected = true
 		}

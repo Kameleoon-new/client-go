@@ -9,6 +9,8 @@ import (
 
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpproxy"
+
+	"github.com/Kameleoon/client-go/v3/utils"
 )
 
 // request
@@ -50,8 +52,8 @@ func (r Request) String() string {
 	var headersBuilder strings.Builder
 	first := true
 	for name, value := range r.Headers {
-		if name == "Authorization" {
-			value = "***"
+		if name == AuthorizationHeader {
+			value = utils.Secret(value)
 		}
 		if !first {
 			headersBuilder.WriteString(",")
@@ -63,7 +65,8 @@ func (r Request) String() string {
 		headersBuilder.WriteString(value)
 	}
 
-	return fmt.Sprintf("HttpRequest{Method:'%s',Url:'%s',Headers:%v,Body:'%s'}", r.Method, r.Url, headersBuilder.String(), body)
+	return fmt.Sprintf("HttpRequest{Method:'%s',Url:'%s',Headers:{%s},Authorization:'%s',Body:'%s'}",
+		r.Method, r.Url, headersBuilder.String(), utils.Secret(r.Authorization), body)
 }
 
 // response

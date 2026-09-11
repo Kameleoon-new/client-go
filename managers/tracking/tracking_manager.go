@@ -2,6 +2,7 @@ package tracking
 
 import (
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kameleoon/client-go/v3/logging"
@@ -24,6 +25,7 @@ type TrackingManager interface {
 const (
 	LinesDelimiter   = "\n"
 	RequestSizeLimit = 2560 * 1024 // 2.5 * 1024^2 characters
+	probeMaxVisitors = 1
 )
 
 type TrackingManagerImpl struct {
@@ -33,6 +35,7 @@ type TrackingManagerImpl struct {
 	visitorManager   storage.VisitorManager
 	trackingTicker   *time.Ticker
 	stopChan         chan struct{}
+	probeMode        int32 // atomic bool; set on request goroutines, read on the ticker goroutine
 }
 
 func NewTrackingManagerImpl(
@@ -44,7 +47,7 @@ func NewTrackingManagerImpl(
 	logging.Debug("CALL: NewTrackingManagerImpl(dataManager, networkManager, visitorManager, scheduledExecutor, "+
 		"trackInterval: %s)", trackInterval)
 	tm := &TrackingManagerImpl{
-		trackingVisitors: NewRwmxCMapVisitorTrackingRegistry(
+		trackingVisitors: NewConcurrentVisitorTrackingRegistry(
 			visitorManager, DefaultStorageLimit, DefaultExtractionLimit,
 		),
 		dataManager:    dataManager,
@@ -85,17 +88,32 @@ func (tm *TrackingManagerImpl) AddVisitorCode(visitorCode string) {
 
 func (tm *TrackingManagerImpl) TrackAll() {
 	logging.Debug("CALL: TrackingManagerImpl.TrackAll()")
-	tm.track(tm.trackingVisitors.Extract())
+	if tm.isProbeMode() {
+		tm.trackProbe()
+	} else {
+		tm.track(tm.trackingVisitors.Extract(UnlimitedExtraction))
+	}
 	logging.Debug("RETURN: TrackingManagerImpl.TrackAll()")
 }
 
 func (tm *TrackingManagerImpl) TrackVisitor(visitorCode string) {
 	logging.Debug("CALL: TrackingManagerImpl.TrackVisitor(visitorCode: %s)", visitorCode)
-	tm.track(SingletonVisitorCodeCollection{visitorCode: visitorCode})
+	tm.track([]string{visitorCode})
 	logging.Debug("RETURN: TrackingManagerImpl.TrackVisitor(visitorCode: %s)", visitorCode)
 }
 
-func (tm *TrackingManagerImpl) track(visitorCodes VisitorCodeCollection) {
+// Sends one visitor's data; visitors without data are dropped (as in the normal path) until one is found.
+func (tm *TrackingManagerImpl) trackProbe() {
+	for {
+		visitorCode := tm.trackingVisitors.Extract(probeMaxVisitors)
+		if (len(visitorCode) == 0) || tm.track(visitorCode) {
+			return
+		}
+	}
+}
+
+// Returns whether a request was sent.
+func (tm *TrackingManagerImpl) track(visitorCodes []string) bool {
 	builder := NewTrackingBuilder(visitorCodes, tm.dataManager.DataFile(), tm.visitorManager, RequestSizeLimit)
 	builder.Build()
 	if len(builder.VisitorCodesToKeep()) > 0 {
@@ -106,14 +124,16 @@ func (tm *TrackingManagerImpl) track(visitorCodes VisitorCodeCollection) {
 		)
 		tm.trackingVisitors.AddAll(builder.VisitorCodesToKeep())
 	}
-	tm.performTrackingRequest(builder.VisitorCodesToSend(), builder.UnsentVisitorData(), builder.TrackingLines())
+	return tm.performTrackingRequest(
+		builder.VisitorCodesToSend(), builder.UnsentVisitorData(), builder.TrackingLines())
 }
 
+// Returns whether a request was sent.
 func (tm *TrackingManagerImpl) performTrackingRequest(
 	visitorCodes []string, unsentVisitorData []types.Sendable, trackingLines []string,
-) {
+) bool {
 	if len(trackingLines) == 0 {
-		return
+		return false
 	}
 	// Mark unsent data as transmitted
 	for _, s := range unsentVisitorData {
@@ -127,6 +147,7 @@ func (tm *TrackingManagerImpl) performTrackingRequest(
 			for _, s := range unsentVisitorData {
 				s.MarkAsSent()
 			}
+			tm.leaveProbeMode()
 		} else {
 			logging.Error("Tracking request failed: %s", err)
 			logging.Info("Failed request for tracking visitors: %s, data: %s", visitorCodes, unsentVisitorData)
@@ -134,6 +155,25 @@ func (tm *TrackingManagerImpl) performTrackingRequest(
 				s.MarkAsUnsent()
 			}
 			tm.trackingVisitors.AddAll(visitorCodes)
+			tm.enterProbeMode()
 		}
 	}()
+	return true
+}
+
+func (tm *TrackingManagerImpl) isProbeMode() bool {
+	return atomic.LoadInt32(&tm.probeMode) != 0
+}
+
+func (tm *TrackingManagerImpl) enterProbeMode() {
+	if atomic.CompareAndSwapInt32(&tm.probeMode, 0, 1) {
+		logging.Info("Tracking request failed: only one visitor's data per tracking request will be sent " +
+			"until a request succeeds")
+	}
+}
+
+func (tm *TrackingManagerImpl) leaveProbeMode() {
+	if atomic.CompareAndSwapInt32(&tm.probeMode, 1, 0) {
+		logging.Info("Tracking request succeeded: full-size tracking requests are restored")
+	}
 }

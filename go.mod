@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/cristalhq/aconfig v0.13.6
 	github.com/cristalhq/aconfig/aconfigyaml v0.12.0
-	github.com/orcaman/concurrent-map/v2 v2.0.1
+	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/segmentio/encoding v0.2.23
 	github.com/stretchr/testify v1.7.5
 	github.com/subchord/go-sse v1.0.7

@@ -12,7 +12,7 @@ import (
 type TrackingBuilder struct {
 	built bool
 
-	visitorCodes     VisitorCodeCollection
+	visitorCodes     []string
 	dataFile         types.IDataFile
 	visitorManager   storage.VisitorManager
 	requestSizeLimit int
@@ -26,7 +26,7 @@ type TrackingBuilder struct {
 }
 
 func NewTrackingBuilder(
-	visitorCodes VisitorCodeCollection, dataFile types.IDataFile, visitorManager storage.VisitorManager,
+	visitorCodes []string, dataFile types.IDataFile, visitorManager storage.VisitorManager,
 	requestSizeLimit int,
 ) *TrackingBuilder {
 	return &TrackingBuilder{
@@ -65,7 +65,7 @@ func (tb *TrackingBuilder) Build() {
 	if tb.built {
 		return
 	}
-	tb.visitorCodes.Range(func(visitorCode string) bool {
+	for _, visitorCode := range tb.visitorCodes {
 		if tb.totalSize <= tb.requestSizeLimit {
 			visitor := tb.visitorManager.PeekVisitor(visitorCode)
 			isConsentGiven := tb.isConsentGiven(visitor)
@@ -80,8 +80,7 @@ func (tb *TrackingBuilder) Build() {
 		} else {
 			tb.visitorCodesToKeep = append(tb.visitorCodesToKeep, visitorCode)
 		}
-		return true
-	})
+	}
 	tb.built = true
 }
 

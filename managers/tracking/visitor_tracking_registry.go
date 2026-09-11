@@ -1,125 +1,151 @@
 package tracking
 
 import (
+	"math"
 	"sync"
 
 	"github.com/Kameleoon/client-go/v3/storage"
-	cmap "github.com/orcaman/concurrent-map/v2"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 type VisitorTrackingRegistry interface {
 	Add(visitorCode string)
 	AddAll(visitorCodes []string)
-	Extract() VisitorCodeCollection
+	// Removes and returns visitor codes; the count is bounded by `limit` and by the registry's own policy.
+	Extract(limit int) []string
 }
 
-// Rwmx VisitorTrackingRegistry with ConcurrentMap
-
 const (
-	DefaultStorageLimit                           = 1_0000_00
+	DefaultStorageLimit                           = 1_000_000
 	DefaultExtractionLimit                        = 20_000
 	LimitedExtractionThresholdCoefficient         = 2
 	RemovalFactor                         float64 = 0.8
+	UnlimitedExtraction                           = math.MaxInt
 )
 
-type RwmxCMapVisitorTrackingRegistry struct {
+// ConcurrentVisitorTrackingRegistry has no registry-wide lock on the hot path: `Add` is a concurrent-map
+// LoadOrStore, which is a lock-free read when the code is already registered and a single-bucket lock otherwise, so
+// request goroutines rarely contend. The map is never swapped out; `Extract` removes codes from it, which guarantees
+// a concurrently added code is either returned now or kept for the next extraction, never lost. Codes are extracted
+// in no particular order.
+type ConcurrentVisitorTrackingRegistry struct {
 	visitorManager  storage.VisitorManager
 	storageLimit    int
 	extractionLimit int
-	mutex           sync.RWMutex
-	visitors        *cmap.ConcurrentMap[string, struct{}]
+	visitors        *xsync.MapOf[string, struct{}]
+
+	extractMx sync.Mutex // serializes extraction and eviction; guards `snapshot`
+	// Keys snapshotted from `visitors` and not yet extracted, used only for batches smaller than the extraction limit
+	// (probe mode). The map has no resumable iteration and Range restarts from the first bucket, so extracting a few
+	// codes per call consumes a snapshot across calls instead of rescanning the table per call.
+	snapshot []string
 }
 
-func NewRwmxCMapVisitorTrackingRegistry(
+func NewConcurrentVisitorTrackingRegistry(
 	visitorManager storage.VisitorManager, storageLimit int, extractionLimit int,
-) *RwmxCMapVisitorTrackingRegistry {
-	visitors := cmap.New[struct{}]()
-	return &RwmxCMapVisitorTrackingRegistry{
+) *ConcurrentVisitorTrackingRegistry {
+	return &ConcurrentVisitorTrackingRegistry{
 		visitorManager:  visitorManager,
 		storageLimit:    storageLimit,
 		extractionLimit: extractionLimit,
-		visitors:        &visitors,
+		visitors:        xsync.NewMapOf[string, struct{}](),
 	}
 }
 
-func (vtr *RwmxCMapVisitorTrackingRegistry) Add(visitorCode string) {
-	vtr.mutex.RLock()
-	defer vtr.mutex.RUnlock()
-	vtr.visitors.Set(visitorCode, struct{}{})
+func (vtr *ConcurrentVisitorTrackingRegistry) Add(visitorCode string) {
+	vtr.visitors.LoadOrStore(visitorCode, struct{}{})
 }
 
-func (vtr *RwmxCMapVisitorTrackingRegistry) AddAll(visitorCodes []string) {
-	vtr.mutex.RLock()
+func (vtr *ConcurrentVisitorTrackingRegistry) AddAll(visitorCodes []string) {
 	for _, visitorCode := range visitorCodes {
-		vtr.visitors.Set(visitorCode, struct{}{})
+		vtr.visitors.LoadOrStore(visitorCode, struct{}{})
 	}
-	vtr.mutex.RUnlock()
-	if vtr.visitors.Count() > vtr.storageLimit {
-		vtr.mutex.Lock()
-		defer vtr.mutex.Unlock()
-		vtr.eraseNonexistentVisitors()
+	if vtr.size() > vtr.storageLimit {
 		vtr.eraseToStorageLimit()
 	}
 }
 
-// Not thread-safe
-func (vtr *RwmxCMapVisitorTrackingRegistry) eraseNonexistentVisitors() {
-	var visitorsToRemove []string
-	vtr.visitors.IterCb(func(vc string, v struct{}) {
-		if vtr.visitorManager.GetVisitor(vc) == nil {
-			visitorsToRemove = append(visitorsToRemove, vc)
+func (vtr *ConcurrentVisitorTrackingRegistry) Extract(limit int) []string {
+	vtr.extractMx.Lock()
+	defer vtr.extractMx.Unlock()
+	if limit < vtr.extractionLimit {
+		return vtr.removeFromSnapshot(limit)
+	}
+	if limit > vtr.extractionLimit {
+		size := vtr.size()
+		if (size <= limit) && (size < vtr.extractionLimit*LimitedExtractionThresholdCoefficient) {
+			return vtr.remove(UnlimitedExtraction)
 		}
+		limit = vtr.extractionLimit
+	}
+	return vtr.remove(limit)
+}
+
+func (vtr *ConcurrentVisitorTrackingRegistry) size() int {
+	if size := vtr.visitors.Size(); size > 0 {
+		return size
+	}
+	return 0
+}
+
+// Removes up to `count` codes in one pass over the map. Requires `extractMx` held.
+func (vtr *ConcurrentVisitorTrackingRegistry) remove(count int) []string {
+	vtr.snapshot = nil // codes listed by a pending snapshot are still in the map and are found by this pass
+	capacity := count
+	if size := vtr.size(); size < capacity {
+		capacity = size
+	}
+	result := make([]string, 0, capacity)
+	vtr.visitors.Range(func(visitorCode string, _ struct{}) bool {
+		vtr.visitors.Delete(visitorCode)
+		result = append(result, visitorCode)
+		return len(result) < count
 	})
-	for _, vc := range visitorsToRemove {
-		vtr.visitors.Remove(vc)
-	}
+	return result
 }
 
-// Not thread-safe
-func (vtr *RwmxCMapVisitorTrackingRegistry) eraseToStorageLimit() {
-	visitorsToRemoveCount := vtr.visitors.Count() - int(float64(vtr.storageLimit)*RemovalFactor)
-	if visitorsToRemoveCount <= 0 {
-		return
+// Removes up to `count` codes from the current snapshot, taking a new one only when it is used up. A batch never
+// spans two snapshots, so a code cannot be returned twice in one batch; a short batch simply leaves the rest for
+// the next extraction. Requires `extractMx` held.
+func (vtr *ConcurrentVisitorTrackingRegistry) removeFromSnapshot(count int) []string {
+	if len(vtr.snapshot) == 0 {
+		vtr.snapshot = vtr.takeSnapshot()
 	}
-	visitorsToRemove := vtr.visitors.Keys()[:visitorsToRemoveCount]
-	for _, vc := range visitorsToRemove {
-		vtr.visitors.Remove(vc)
+	if count > len(vtr.snapshot) {
+		count = len(vtr.snapshot)
 	}
+	result := make([]string, 0, count)
+	for (len(result) < count) && (len(vtr.snapshot) > 0) {
+		visitorCode := vtr.snapshot[0]
+		vtr.snapshot = vtr.snapshot[1:]
+		// Already removed by eviction: the snapshot is stale
+		if _, exists := vtr.visitors.LoadAndDelete(visitorCode); exists {
+			result = append(result, visitorCode)
+		}
+	}
+	return result
 }
 
-func (vtr *RwmxCMapVisitorTrackingRegistry) Extract() VisitorCodeCollection {
-	if vtr.shouldExtractAllBeUsed() {
-		return vtr.extractAll(true)
-	}
-	return vtr.extractLimited()
+func (vtr *ConcurrentVisitorTrackingRegistry) takeSnapshot() []string {
+	keys := make([]string, 0, vtr.size())
+	vtr.visitors.Range(func(visitorCode string, _ struct{}) bool {
+		keys = append(keys, visitorCode)
+		return true
+	})
+	return keys
 }
 
-func (vtr *RwmxCMapVisitorTrackingRegistry) shouldExtractAllBeUsed() bool {
-	return vtr.visitors.Count() < vtr.extractionLimit*LimitedExtractionThresholdCoefficient
-}
-
-func (vtr *RwmxCMapVisitorTrackingRegistry) extractAll(lock bool) VisitorCodeCollection {
-	newVisitors := cmap.New[struct{}]()
-	if lock {
-		vtr.mutex.Lock()
+func (vtr *ConcurrentVisitorTrackingRegistry) eraseToStorageLimit() {
+	vtr.extractMx.Lock()
+	defer vtr.extractMx.Unlock()
+	vtr.visitors.Range(func(visitorCode string, _ struct{}) bool {
+		if vtr.visitorManager.PeekVisitor(visitorCode) == nil {
+			vtr.visitors.Delete(visitorCode)
+		}
+		return true
+	})
+	visitorsToRemoveCount := vtr.size() - int(float64(vtr.storageLimit)*RemovalFactor)
+	if visitorsToRemoveCount > 0 {
+		vtr.remove(visitorsToRemoveCount)
 	}
-	oldVisitors := vtr.visitors
-	vtr.visitors = &newVisitors
-	if lock {
-		vtr.mutex.Unlock()
-	}
-	return CMapVisitorCodeCollection{visitorCodes: oldVisitors}
-}
-
-func (vtr *RwmxCMapVisitorTrackingRegistry) extractLimited() VisitorCodeCollection {
-	vtr.mutex.Lock()
-	defer vtr.mutex.Unlock()
-	if vtr.shouldExtractAllBeUsed() {
-		return vtr.extractAll(false)
-	}
-	extracted := vtr.visitors.Keys()[:vtr.extractionLimit]
-	for _, vc := range extracted {
-		vtr.visitors.Remove(vc)
-	}
-	return SliceVisitorCodeCollection{visitorCodes: extracted}
 }
