@@ -17,7 +17,7 @@ import (
 	"github.com/Kameleoon/client-go/v3/managers/warehouse"
 	"github.com/Kameleoon/client-go/v3/network"
 	"github.com/Kameleoon/client-go/v3/network/cookie"
-	"github.com/Kameleoon/client-go/v3/realtime"
+	"github.com/Kameleoon/client-go/v3/network/streaming"
 	"github.com/Kameleoon/client-go/v3/storage"
 	"github.com/Kameleoon/client-go/v3/targeting"
 	"github.com/Kameleoon/client-go/v3/types"
@@ -438,8 +438,8 @@ func newClient(siteCode string, cfg *KameleoonClientConfig) (*kameleoonClient, e
 	rdm := remotedata.NewRemoteDataManager(dm, nm, vm)
 	trM := tracking.NewTrackingManagerImpl(dm, nm, vm, cfg.TrackingInterval)
 	readiness := newKameleoonClientReadiness(siteCode, cfg.Environment)
-	cm := configuration.NewConfigurationManager(dm, nm, em, &realtime.NetSseClient{}, cfg.RefreshInterval,
-		cfg.Environment, readiness)
+	sse := streaming.NewHttpSseClient(cfg.Network.ProxyURL)
+	cm := configuration.NewConfigurationManager(dm, nm, em, sse, cfg.RefreshInterval, cfg.Environment, readiness)
 	client := newClientInternal(cfg, readiness, dm, nm, vm, hm, tarM, rdm, trM, cm, em)
 	logging.Info("RETURN: newClient(siteCode: %s, config: %s) -> (client, error: <nil>)",
 		siteCode, cfg)
@@ -513,6 +513,7 @@ func (c *kameleoonClient) close() {
 		} else {
 			c.closed = true
 			c.m.Unlock()
+			c.configurationManager.Close()
 			c.visitorManager.Close()
 			c.trackingManager.Close()
 		}

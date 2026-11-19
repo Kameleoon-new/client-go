@@ -2,8 +2,8 @@ package utils
 
 import (
 	"fmt"
+	"math"
 	"strconv"
-	"strings"
 
 	"github.com/Kameleoon/client-go/v3/errs"
 	"github.com/Kameleoon/client-go/v3/logging"
@@ -16,20 +16,33 @@ type Version struct {
 	Patch int
 }
 
-// VersionFromString parses a version string (e.g., "1.2.3") and returns a Version if no parsing fails.
+// NewVersionFromString parses a version string (e.g., "1.2.3") and returns a Version if no parsing fails.
+// A pre-release (-) or build (+) suffix is ignored (e.g., "1.2.3-beta.1+build" is parsed as "1.2.3").
 func NewVersionFromString(versionString string) (*Version, error) {
-	versions := []int{0, 0, 0}
-	parts := strings.Split(versionString, ".")
-	for i := 0; i < len(versions) && i < len(parts); i++ {
-		val, err := strconv.Atoi(parts[i])
-		if err != nil {
-			logging.Error("Invalid version component, index: %d, value: '%s'", i, parts[i])
-			return nil, errs.NewInternalError("Parsing error")
+	versions := [3]int{}
+	index := 0
+	hasDigits := false
+	valid := true
+	// Single pass without splitting, stops at pre-release (-) or build (+) suffix
+	for i := 0; i < len(versionString); i++ {
+		c := versionString[i]
+		if c >= '0' && c <= '9' && versions[index] <= (math.MaxInt-int(c-'0'))/10 {
+			versions[index] = versions[index]*10 + int(c-'0')
+			hasDigits = true
+		} else if c == '.' && hasDigits && index < 2 {
+			index++
+			hasDigits = false
+		} else {
+			valid = c == '.' || c == '-' || c == '+'
+			break
 		}
-		versions[i] = val
+	}
+	// Each parsed component must have at least one digit
+	if !valid || !hasDigits {
+		logging.Error("Invalid version component, index: %d, version: '%s'", index, versionString)
+		return nil, errs.NewInternalError("Parsing error")
 	}
 	return &Version{Major: versions[0], Minor: versions[1], Patch: versions[2]}, nil
-
 }
 
 // CompareTo compares this version with another.

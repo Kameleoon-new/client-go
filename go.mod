@@ -8,7 +8,6 @@ require (
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/segmentio/encoding v0.2.23
 	github.com/stretchr/testify v1.7.5
-	github.com/subchord/go-sse v1.0.7
 	github.com/valyala/fasthttp v1.34.0
 	golang.org/x/exp v0.0.0-20240529005216-23cca8864a10
 )
@@ -16,7 +15,6 @@ require (
 require (
 	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/klauspost/compress v1.15.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.6 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

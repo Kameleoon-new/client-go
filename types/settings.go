@@ -1,7 +1,7 @@
 package types
 
 type Settings interface {
-	RealTimeUpdate() bool
+	StreamingMode() bool
 	IsConsentRequired() bool
 	BlockingBehaviourIfConsentNotGiven() ConsentBlockingBehaviour
 	DataApiDomain() string

@@ -49,7 +49,7 @@ func (nm *NetworkManagerImpl) SendTrackingData(trackingLines string) (bool, erro
 	request := Request{
 		Method:         HttpPost,
 		Url:            url,
-		ContentType:    WildcardContentType,
+		ContentType:    TextContentType,
 		Data:           trackingLines,
 		Timeout:        nm.DefaultTimeout,
 		IsAuthRequired: true,

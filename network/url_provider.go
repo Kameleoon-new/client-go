@@ -59,10 +59,7 @@ type UrlProviderImpl struct {
 }
 
 func NewUrlProviderImpl(siteCode string, networkDomain string, sdkName string, sdkVersion string) *UrlProviderImpl {
-	queryBuilder := makeSdkSiteCodeQueryBase(siteCode, sdkName, sdkVersion)
-	accessTokenQueryBase := queryBuilder.String()
-	queryBuilder.Append(utils.QPBodyUA, "true")
-	trackingQueryBase := queryBuilder.String()
+	sdkQueryBase := makeSdkSiteCodeQueryBase(siteCode, sdkName, sdkVersion).String()
 
 	up := &UrlProviderImpl{
 		siteCode:             siteCode,
@@ -72,8 +69,8 @@ func NewUrlProviderImpl(siteCode string, networkDomain string, sdkName string, s
 		eventsDomain:         DefaultEventsDomain,
 		configurationDomain:  DefaultConfigurationDomain,
 		accessTokenDomain:    DefaultAccessTokenDomain,
-		accessTokenQueryBase: accessTokenQueryBase,
-		trackingQueryBase:    trackingQueryBase,
+		accessTokenQueryBase: sdkQueryBase,
+		trackingQueryBase:    sdkQueryBase,
 	}
 	up.updateDomains(networkDomain)
 	return up
@@ -155,8 +152,7 @@ func (up *UrlProviderImpl) MakeVisitorDataGetUrl(
 	filter types.RemoteVisitorDataFilter,
 	isUniqueIdentifier bool,
 ) string {
-	qb := utils.NewQueryBuilder()
-	qb.Append(utils.QPSiteCode, up.siteCode)
+	qb := makeSdkSiteCodeQueryBase(up.siteCode, up.sdkName, up.sdkVersion)
 	qb.Append(getUserIdQP(isUniqueIdentifier), visitorCode)
 	qb.Append(utils.QPMaxNumberPreviousVisits, fmt.Sprintf("%d", filter.PreviousVisitAmount))
 	qb.Append(utils.QPVersion, "0")
@@ -180,8 +176,7 @@ func addFlagParamIfRequired(qb *utils.QueryBuilder, paramName string, state bool
 }
 
 func (up *UrlProviderImpl) MakeApiDataGetRequestUrl(key string) string {
-	qb := utils.NewQueryBuilder()
-	qb.Append(utils.QPSiteCode, up.siteCode)
+	qb := makeSdkSiteCodeQueryBase(up.siteCode, up.sdkName, up.sdkVersion)
 	qb.Append(utils.QPKey, key)
 	return fmt.Sprintf(dataApiUrlFormat, up.dataApiDomain, getDataPath, qb.String())
 }

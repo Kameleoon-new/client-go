@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## 3.23.0 - 2026-11-19
+### Features
+* Real-time configuration streaming can now be enabled for server-side SDKs independently of client-side SDKs. The SDK reads the new `configUpdateMode` field of the configuration (`STREAMING` or `STREAMING_SERVER_ONLY` enables streaming) instead of `realTimeUpdate`.
+* The real-time (SSE) connection now honors the `Network.ProxyURL` setting of the client configuration, like the other SDK requests.
+* Added support for version strings containing pre-release and build metadata, in accordance with [Semantic Versioning](https://semver.org/#semantic-versioning-200). Pre-release and build metadata components are currently ignored, and the version is normalized to `major.minor.patch`.
+### Bug fixes
+* Fixed the SDK getting stuck without configuration updates when the real-time streaming connection could not be established, or kept being established without delivering an event (for example, when the streaming server answers with an error or with an empty response, or behind a proxy which accepts the connection but forwards nothing). The SDK now retries the connection once after 10 seconds and then falls back to polling, with the first poll after one minute (or `RefreshInterval` if it is shorter); each successful poll switches back to streaming once it is available again.
+* Fixed configuration updates published while the real-time streaming connection was down (reconnection, server-side close) being missed until the next update. The SDK now resynchronizes the configuration on every (re)connection.
+* Fixed the SDK getting stuck without configuration updates on a stalled streaming connection (e.g. one silently dropped by a NAT or load balancer). The SDK now treats 6 minutes of silence as a connection failure: it reconnects, and falls back to polling if the new connection stalls as well.
+* A configuration fetch which fails while the SDK is in streaming mode (for example, the fetch triggered by a streaming event hits a transient network error) is now retried after one minute (or `RefreshInterval` if it is shorter), with streaming restored once a fetch succeeds, instead of after a full refresh interval.
+* Fixed an older configuration being applied over a newer one when two configuration fetches (for example, a poll and a fetch triggered by a streaming event) completed out of order. The SDK now ignores a fetched configuration whose `dateModified` is older than the current one's.
+* `KameleoonClientFactory.Forget` now stops the configuration polling or streaming of the forgotten client. Previously they kept running until the process exited.
+* Fixed a busy loop of the real-time streaming client, which kept a CPU core fully loaded and never reconnected once the streaming server closed the connection gracefully. The `subchord/go-sse` dependency, which caused it, was replaced with a built-in SSE client.
+* Lowered the log level of the message emitted when the streaming server closes the real-time (SSE) connection from `ERROR` to `INFO`. The streaming server recycles connections periodically and the SDK reconnects automatically, so this is expected behavior. Connection failures (error responses, network errors) are still logged as `ERROR`.
+
 ## 3.22.1 - 2026-09-11
 ### Bug fixes
 * Reduced the load on the Data API during its outages. After a failed tracking request, the SDK sends only one visitor's data per tracking request until a request succeeds, instead of retrying with a full-size (up to 2.5 MB) request on every tracking interval. Once the Data API is reachable again, the accumulated visitor data is sent in full-size requests as usual.

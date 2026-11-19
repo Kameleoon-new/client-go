@@ -30,7 +30,6 @@ func (qb QueryBuilder) String() string {
 }
 
 const (
-	QPBodyUA                  = "bodyUa"
 	QPBrowserIndex            = "browserIndex"
 	QPBrowserVersion          = "browserVersion"
 	QPCbs                     = "cbs"
