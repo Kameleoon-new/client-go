@@ -71,17 +71,19 @@ const (
 type OperatorType string
 
 const (
-	OperatorUndefined     OperatorType = "UNDEFINED"
-	OperatorContains      OperatorType = "CONTAINS"
-	OperatorExact         OperatorType = "EXACT"
-	OperatorAny           OperatorType = "ANY"
-	OperatorRegExp        OperatorType = "REGULAR_EXPRESSION"
-	OperatorLower         OperatorType = "LOWER"
-	OperatorEqual         OperatorType = "EQUAL"
-	OperatorGreater       OperatorType = "GREATER"
-	OperatorIsTrue        OperatorType = "TRUE"
-	OperatorIsFalse       OperatorType = "FALSE"
-	OperatorIsAmongValues OperatorType = "AMONG_VALUES"
+	OperatorUndefined      OperatorType = "UNDEFINED"
+	OperatorContains       OperatorType = "CONTAINS"
+	OperatorExact          OperatorType = "EXACT"
+	OperatorAny            OperatorType = "ANY"
+	OperatorRegExp         OperatorType = "REGULAR_EXPRESSION"
+	OperatorLower          OperatorType = "LOWER"
+	OperatorEqual          OperatorType = "EQUAL"
+	OperatorGreater        OperatorType = "GREATER"
+	OperatorLowerOrEqual   OperatorType = "LOWER_OR_EQUAL"
+	OperatorGreaterOrEqual OperatorType = "GREATER_OR_EQUAL"
+	OperatorIsTrue         OperatorType = "TRUE"
+	OperatorIsFalse        OperatorType = "FALSE"
+	OperatorIsAmongValues  OperatorType = "AMONG_VALUES"
 )
 
 type TargetedDataSdk struct {

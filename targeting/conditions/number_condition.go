@@ -19,17 +19,11 @@ func (c *NumberCondition[T]) CheckTargeting(targetData interface{}) bool {
 }
 
 func (c *NumberCondition[T]) checkTargeting(value T) bool {
-	switch c.MatchType {
-	case types.OperatorEqual:
-		return value == c.Value
-	case types.OperatorGreater:
-		return value > c.Value
-	case types.OperatorLower:
-		return value < c.Value
-	default:
+	targeted, isComparison := compare(c.MatchType, value, c.Value)
+	if !isComparison {
 		logging.Error("Unexpected comparing operation for %s condition: %s", c.TargetingConditionBase.Type, c.MatchType)
-		return false
 	}
+	return targeted
 }
 
 func (c NumberCondition[T]) String() string {

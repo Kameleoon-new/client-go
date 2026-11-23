@@ -50,17 +50,11 @@ func (c *BrowserCondition) checkTargeting(browser *types.Browser) bool {
 		return false
 	}
 
-	switch c.VersionMatchType {
-	case types.OperatorEqual:
-		return browser.Version() == floatVersion
-	case types.OperatorGreater:
-		return browser.Version() > floatVersion
-	case types.OperatorLower:
-		return browser.Version() < floatVersion
-	default:
+	targeted, isComparison := compare(c.VersionMatchType, browser.Version(), floatVersion)
+	if !isComparison {
 		logging.Error("Unexpected comparing operation for 'Browser' condition: %s", c.VersionMatchType)
-		return false
 	}
+	return targeted
 }
 
 func (c BrowserCondition) String() string {

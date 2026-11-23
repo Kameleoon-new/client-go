@@ -40,18 +40,12 @@ func (c *VersionCondition) CompareWithVersion(targetVersion string) bool {
 		return false
 	}
 
-	cmp := target.CompareTo(condition)
-	switch c.VersionMatchType {
-	case types.OperatorEqual:
-		return cmp == 0
-	case types.OperatorGreater:
-		return cmp > 0
-	case types.OperatorLower:
-		return cmp < 0
-	default:
+	// The sign of comparing the versions is compared with zero
+	targeted, isComparison := compare(c.VersionMatchType, target.CompareTo(condition), 0)
+	if !isComparison {
 		logging.Error("Unexpected comparing operation for '%s' condition: %s", c.Type, c.VersionMatchType)
-		return false
 	}
+	return targeted
 }
 
 func (c VersionCondition) String() string {
